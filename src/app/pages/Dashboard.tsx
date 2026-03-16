@@ -319,7 +319,7 @@ export function Dashboard() {
                 <div style={{ animation: mounted ? 'fadeUp 0.5s ease 0.45s both' : 'none' }}>
                   <ChatPanel
                     title="Chat with Health AI"
-                    avatar="/assets/Medical_Avatar_Logo.png"
+                    moduleKey="dashboard"
                     responses={chatResponses}
                     autoMessages={autoMessages}
                   />
@@ -332,7 +332,7 @@ export function Dashboard() {
               <div style={{ animation: mounted ? 'fadeUp 0.5s ease 0.4s both' : 'none' }}>
                 <ChatPanel
                   title="Chat with Health AI"
-                  avatar="/assets/Medical_Avatar_Logo.png"
+                  moduleKey="dashboard"
                   responses={chatResponses}
                   autoMessages={autoMessages}
                 />

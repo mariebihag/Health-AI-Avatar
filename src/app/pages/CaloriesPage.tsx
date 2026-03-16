@@ -329,7 +329,7 @@ export function CaloriesPage() {
             <div style={{ animation: mounted ? 'fadeUp 0.5s ease 0.4s both' : 'none' }}>
               <ChatPanel
                 title="Nutrition AI"
-                avatar="/assets/Medical_Avatar_Logo.png"
+                moduleKey="calories"
                 responses={chatResponses}
                 defaultResponse="Your nutrition today looks on track. Keep logging your meals for accurate insights."
                 autoMessages={[{ text: `You've consumed ${totalCals} kcal so far. Keep logging your meals for accurate insights.`, delay: 1500 }]}

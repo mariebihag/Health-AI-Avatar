@@ -446,7 +446,7 @@ export function HeartPage() {
             <div style={{ animation: mounted ? 'fadeUp 0.5s ease 0.4s both' : 'none' }}>
               <ChatPanel
                 title="Cardiac AI"
-                avatar="/assets/Medical_Avatar_Logo.png"
+                moduleKey="heart"
                 responses={chatResponses}
                 defaultResponse="Your cardiovascular metrics look healthy. Keep up the good work."
                 autoMessages={[{ text: `Heart rate is within normal resting range. HRV is strong at ${hrv}ms.`, delay: 1500 }]}

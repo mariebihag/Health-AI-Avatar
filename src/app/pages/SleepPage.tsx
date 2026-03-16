@@ -351,7 +351,7 @@ export function SleepPage() {
             <div style={{ animation: mounted ? 'fadeUp 0.5s ease 0.4s both' : 'none' }}>
               <ChatPanel
                 title="Sleep AI"
-                avatar="/assets/Medical_Avatar_Logo.png"
+                moduleKey="sleep"
                 responses={chatResponses}
                 defaultResponse="Your sleep metrics look healthy. Consistency is key to better rest."
                 autoMessages={[{ text: 'Average sleep is 7.2 hours with a quality score of 78/100. Try aiming for 8 hours tonight.', delay: 1500 }]}

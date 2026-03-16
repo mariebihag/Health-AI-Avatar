@@ -315,7 +315,7 @@ export function StepsPage() {
             <div style={{ animation: mounted ? 'fadeUp 0.5s ease 0.4s both' : 'none' }}>
               <ChatPanel
                 title="Steps AI"
-                avatar="/assets/Medical_Avatar_Logo.png"
+                moduleKey="steps"
                 responses={chatResponses}
                 defaultResponse="Keep moving! Every step counts towards your health goals."
                 autoMessages={[{ text: `You've taken ${currentSteps.toLocaleString()} steps today — ${percentage.toFixed(0)}% of your ${goal.toLocaleString()} step goal.`, delay: 1500 }]}

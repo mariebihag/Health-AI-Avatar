@@ -312,7 +312,7 @@ export function HydrationPage() {
             <div style={{ animation: mounted ? 'fadeUp 0.5s ease 0.4s both' : 'none' }}>
               <ChatPanel
                 title="Hydration AI"
-                avatar="/assets/Medical_Avatar_Logo.png"
+                moduleKey="hydration"
                 responses={chatResponses}
                 defaultResponse="Staying hydrated is key to energy and focus. Keep sipping throughout the day."
                 autoMessages={[{ text: `You've had ${currentIntake.toFixed(1)}L today — ${remaining.toFixed(1)}L left to reach your goal.`, delay: 1500 }]}
