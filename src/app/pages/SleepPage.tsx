@@ -6,6 +6,7 @@ import { ChatPanel } from '../components/ChatPanel';
 import { useResponsive } from '../hooks/useResponsive';
 import { Clock, TrendingUp, Star, Moon } from 'lucide-react';
 import { toast } from 'sonner';
+import { databases, DATABASE_ID, COLLECTIONS, ID, account } from '../../lib/appwrite';
 import '../styles/dashboard.css';
 
 const bedImg    = '/assets/bed.png';
@@ -17,28 +18,73 @@ const MemoSidebar = memo(Sidebar);
 export function SleepPage() {
   const [showLogModal, setShowLogModal] = useState(false);
   const [mounted, setMounted]           = useState(false);
+  const [saving, setSaving]             = useState(false);
+  const [avgHours, setAvgHours]         = useState(0);
   const { isMobile, isTablet } = useResponsive();
   const [logData, setLogData] = useState({
     hours: '', bedtime: '', waketime: '', quality: '5',
   });
 
-  useEffect(() => { setMounted(true); }, []);
+  useEffect(() => {
+    setMounted(true);
+    loadSleepData();
+  }, []);
 
-  const handleLogSubmit = (e: React.FormEvent) => {
+  const loadSleepData = async () => {
+    try {
+      const user = await account.get();
+      const res  = await databases.listDocuments(DATABASE_ID, COLLECTIONS.sleep);
+      const mine = res.documents.filter(d => d.userID === user.$id);
+      if (mine.length > 0) {
+        const total = mine.reduce((s, d) => s + (d.hoursSlept || 0), 0);
+        setAvgHours(parseFloat((total / mine.length).toFixed(1)));
+      }
+    } catch (err) {
+      console.error('❌ Load sleep error:', err);
+    }
+  };
+
+  const handleLogSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    toast.success('Sleep data logged successfully!');
-    setShowLogModal(false);
-    setLogData({ hours: '', bedtime: '', waketime: '', quality: '5' });
+    setSaving(true);
+    try {
+      const user  = await account.get();
+      const today = new Date().toISOString().split('T')[0];
+
+      const doc = await databases.createDocument(
+        DATABASE_ID,
+        COLLECTIONS.sleep,
+        ID.unique(),
+        {
+          userID:       user.$id,
+          hoursSlept:   parseFloat(logData.hours),
+          bedTime:      logData.bedtime,
+          wakeTime:     logData.waketime,
+          quality:      logData.quality,
+          date:         today,
+          loggedAt:     new Date().toISOString(),
+        }
+      );
+      console.log('✅ Sleep saved:', doc);
+      toast.success('Sleep data logged successfully!');
+      setShowLogModal(false);
+      setLogData({ hours: '', bedtime: '', waketime: '', quality: '5' });
+      await loadSleepData();
+    } catch (err) {
+      console.error('❌ Save sleep error:', err);
+      toast.error('Failed to save sleep log. Check console.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const chatResponses = {
-    sleep:   'Your average is 7.2 hours with a quality score of 78/100.',
+    sleep:   `Your average is ${avgHours} hours.`,
     quality: 'Sleep quality score is 78/100 — above average. Keep your bedtime consistent.',
     deep:    'You spent 1.8 hours in deep sleep last night — within the healthy 20–25% range.',
     rem:     'REM sleep was 19% last night, supporting memory and mood.',
   };
 
-  /* ── Chart data ─────────────────────────────────────────────── */
   const sleepDurationData = {
     labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
     datasets: [{
@@ -70,8 +116,7 @@ export function SleepPage() {
       data: [10.5, 11, 10.3, 10.8, 11.5, 12, 11.2],
       borderColor: 'rgba(139,92,246,1)',
       backgroundColor: 'rgba(139,92,246,0.1)',
-      fill: true,
-      tension: 0.4,
+      fill: true, tension: 0.4,
       pointBackgroundColor: 'rgba(168,85,247,1)',
       pointRadius: 4,
     }],
@@ -98,12 +143,11 @@ export function SleepPage() {
     cutout: '68%',
   };
 
-  /* ── Metric cards config ─────────────────────────────────────── */
   const metrics = [
-    { label: 'Avg Duration', value: '7.2', unit: 'hrs',  color: '#8b5cf6', icon: Moon,       desc: 'Nightly average' },
-    { label: 'Quality Score', value: '78',  unit: '/100', color: '#a78bfa', icon: TrendingUp, desc: 'Above average' },
-    { label: 'Avg Bedtime',   value: '10:45', unit: 'PM', color: '#38bdf8', icon: Clock,      desc: 'Consistent schedule' },
-    { label: 'Deep Sleep',    value: '1.8', unit: 'hrs',  color: '#f59e0b', icon: Star,       desc: '25% of total sleep' },
+    { label: 'Avg Duration',  value: String(avgHours || 7.2), unit: 'hrs',  color: '#8b5cf6', icon: Moon,       desc: 'Nightly average' },
+    { label: 'Quality Score', value: '78',                    unit: '/100', color: '#a78bfa', icon: TrendingUp, desc: 'Above average' },
+    { label: 'Avg Bedtime',   value: '10:45',                 unit: 'PM',  color: '#38bdf8', icon: Clock,      desc: 'Consistent schedule' },
+    { label: 'Deep Sleep',    value: '1.8',                   unit: 'hrs', color: '#f59e0b', icon: Star,       desc: '25% of total sleep' },
   ];
 
   const card: React.CSSProperties = {
@@ -121,50 +165,31 @@ export function SleepPage() {
         @keyframes fadeUp   { from { opacity:0; transform:translateY(22px); } to { opacity:1; transform:translateY(0); } }
         @keyframes fadeIn   { from { opacity:0; } to { opacity:1; } }
         @keyframes ringPulse { 0%{ transform:scale(1); opacity:.6; } 100%{ transform:scale(1.7); opacity:0; } }
-
-        /* Moon floats gently */
         @keyframes moonFloat {
           0%,100% { transform: translateY(0) rotate(-5deg); filter: drop-shadow(0 0 22px rgba(250,204,21,0.5)); }
           50%      { transform: translateY(-10px) rotate(2deg); filter: drop-shadow(0 0 38px rgba(250,204,21,0.8)); }
         }
-        /* Bed rocks slightly, like settling in */
         @keyframes bedSettle {
           0%,100% { transform: rotate(0deg) translateY(0); filter: drop-shadow(0 8px 20px rgba(0,0,0,0.4)); }
           30%     { transform: rotate(-1.5deg) translateY(-4px); filter: drop-shadow(0 12px 28px rgba(0,0,0,0.5)); }
           60%     { transform: rotate(1deg) translateY(-2px); }
         }
-        /* Stars twinkle */
         @keyframes twinkle {
           0%,100% { opacity:.2; transform:scale(1); }
           50%      { opacity:.9; transform:scale(1.3); }
         }
-        /* Quality ring fill on mount */
-        @keyframes ringFill {
-          from { stroke-dashoffset: 283; }
-        }
-
-        .sleep-card:hover { transform: translateY(-3px) !important; box-shadow: 0 12px 40px rgba(80,0,200,0.25) !important; }
-        .organ-card:hover { transform: translateY(-4px) scale(1.015) !important; }
-        .log-btn:hover    { transform: translateY(-2px) !important; box-shadow: 0 8px 24px rgba(139,92,246,0.45) !important; }
         @keyframes streakPop {
           0%  { transform:scale(0) rotate(-20deg); opacity:0; }
           70% { transform:scale(1.1) rotate(4deg); opacity:1; }
           100%{ transform:scale(1) rotate(0deg); opacity:1; }
         }
-
-        /* Modal input overrides */
-        .sleep-input {
-          width:100%; padding:11px 14px;
-          background:rgba(255,255,255,0.07);
-          border:1px solid rgba(100,180,255,0.25);
-          border-radius:10px; color:#e0f0ff; font-size:14px; outline:none;
-          box-sizing:border-box; transition:all .2s;
-        }
+        .sleep-card:hover { transform: translateY(-3px) !important; box-shadow: 0 12px 40px rgba(80,0,200,0.25) !important; }
+        .organ-card:hover { transform: translateY(-4px) scale(1.015) !important; }
+        .log-btn:hover    { transform: translateY(-2px) !important; box-shadow: 0 8px 24px rgba(139,92,246,0.45) !important; }
+        .sleep-input { width:100%; padding:11px 14px; background:rgba(255,255,255,0.07); border:1px solid rgba(100,180,255,0.25); border-radius:10px; color:#e0f0ff; font-size:14px; outline:none; box-sizing:border-box; transition:all .2s; }
         .sleep-input:focus { border-color:rgba(139,92,246,0.7); background:rgba(255,255,255,0.11); box-shadow:0 0 0 3px rgba(139,92,246,0.15); }
         .sleep-input::placeholder { color:rgba(180,210,255,0.35); }
-        /* range track */
         .sleep-range { width:100%; accent-color:#8b5cf6; }
-
         ::-webkit-scrollbar { width:5px; }
         ::-webkit-scrollbar-track { background:transparent; }
         ::-webkit-scrollbar-thumb { background:rgba(139,92,246,0.3); border-radius:10px; }
@@ -172,13 +197,11 @@ export function SleepPage() {
 
       <div className="dashboard-page">
         <MemoSidebar />
-
         <div className="main-content" style={{ padding: 0 }}>
           <Header userName="User" />
 
           <div style={{ padding: isMobile ? '16px' : '24px 28px', display: 'grid', gridTemplateColumns: isMobile || isTablet ? '1fr' : '1fr 320px', gap: '22px', minHeight: 'calc(100vh - 73px)' }}>
 
-            {/* ── MAIN COLUMN ─────────────────────────────────── */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
 
               {/* Page Header */}
@@ -196,27 +219,17 @@ export function SleepPage() {
                     <p style={{ color:'rgba(180,210,255,0.5)', fontSize:'13px', margin:'2px 0 0' }}>Monitor your sleep quality and patterns</p>
                   </div>
                 </div>
-                <button
-                  className="log-btn"
-                  onClick={() => setShowLogModal(true)}
-                  style={{
-                    background:'linear-gradient(135deg,#8b5cf6,#6366f1)',
-                    border:'none', borderRadius:'12px', padding:'12px 22px',
-                    color:'#fff', fontWeight:700, fontSize:'13px', cursor:'pointer',
-                    boxShadow:'0 4px 18px rgba(139,92,246,0.35)', transition:'all .2s ease',
-                    letterSpacing:'0.02em',
-                  }}
-                >
+                <button className="log-btn" onClick={() => setShowLogModal(true)}
+                  style={{ background:'linear-gradient(135deg,#8b5cf6,#6366f1)', border:'none', borderRadius:'12px', padding:'12px 22px', color:'#fff', fontWeight:700, fontSize:'13px', cursor:'pointer', boxShadow:'0 4px 18px rgba(139,92,246,0.35)', transition:'all .2s ease', letterSpacing:'0.02em' }}>
                   Log Sleep
                 </button>
               </div>
 
-              {/* Organ Cards — Moon, Bed & Streak */}
+              {/* Organ Cards */}
               <div style={{ display:'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr', gap:'16px', animation: mounted ? 'fadeUp 0.5s ease 0.1s both' : 'none' }}>
 
                 {/* Moon Card */}
                 <div style={{ ...card, border:'1px solid rgba(250,204,21,0.2)', display:'flex', flexDirection:'column', alignItems:'center', gap:'12px', padding:'28px 20px', position:'relative', overflow:'hidden' }} className="organ-card">
-                  {/* twinkling stars */}
                   {[{top:'12%',left:'8%',d:.7},{top:'18%',right:'12%',d:1.1},{top:'8%',right:'30%',d:1.8},{top:'30%',left:'20%',d:2.3}].map((s,i)=>(
                     <div key={i} style={{ position:'absolute', top:s.top, left:(s as any).left, right:(s as any).right, width:4, height:4, borderRadius:'50%', background:'#fde68a', animation:`twinkle ${1.4+i*0.5}s ease-in-out infinite`, animationDelay:`${s.d}s` }} />
                   ))}
@@ -240,18 +253,17 @@ export function SleepPage() {
                     <p style={{ color:'#e0f0ff', fontWeight:700, fontSize:'15px', margin:'0 0 5px' }}>Rest Duration</p>
                     <div style={{ display:'flex', alignItems:'center', gap:'5px', justifyContent:'center' }}>
                       <div style={{ width:7, height:7, borderRadius:'50%', background:'#22c55e', boxShadow:'0 0 5px #22c55e' }} />
-                      <span style={{ color:'#22c55e', fontSize:'12px', fontWeight:600 }}>7.2 hrs avg</span>
+                      <span style={{ color:'#22c55e', fontSize:'12px', fontWeight:600 }}>{avgHours || 7.2} hrs avg</span>
                     </div>
                     <p style={{ color:'rgba(180,210,255,0.4)', fontSize:'11px', margin:'4px 0 0' }}>Bedtime 10:45 PM</p>
                   </div>
                 </div>
 
-                {/* Sleep Streak Card */}
+                {/* Streak Card */}
                 <div style={{ ...card, border:'1px solid rgba(251,191,36,0.25)', display:'flex', flexDirection:'column', alignItems:'center', gap:'12px', padding:'24px 16px', position:'relative', overflow:'hidden' }} className="organ-card">
                   <div style={{ position:'absolute', bottom:'-20px', left:'50%', transform:'translateX(-50%)', width:'140px', height:'70px', background:'rgba(251,191,36,0.08)', filter:'blur(30px)', borderRadius:'50%', pointerEvents:'none' }} />
                   <div style={{ position:'relative' }}>
                     <img src={streakImg} alt="Streak" style={{ width:120, height:120, objectFit:'contain', animation: mounted ? 'streakPop 0.6s cubic-bezier(.4,0,.2,1) 0.4s both' : 'none', filter:'drop-shadow(0 0 24px rgba(251,191,36,0.55))' }} />
-                    {/* Verified badge */}
                     <div style={{ position:'absolute', bottom:4, right:-4, width:34, height:34, borderRadius:'50%', background:'linear-gradient(135deg,#fbbf24,#f59e0b)', border:'3px solid rgba(8,20,50,0.9)', display:'flex', alignItems:'center', justifyContent:'center', boxShadow:'0 0 12px rgba(251,191,36,0.7)', animation: mounted ? 'streakPop 0.6s ease 0.7s both' : 'none' }}>
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M20 6L9 17l-5-5" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/></svg>
                     </div>
@@ -292,15 +304,8 @@ export function SleepPage() {
                 })}
               </div>
 
-              {/* Sleep Reminder Banner */}
-              <div style={{
-                background:'linear-gradient(135deg,rgba(139,92,246,0.3),rgba(99,102,241,0.3))',
-                backdropFilter:'blur(20px)', border:'1px solid rgba(139,92,246,0.35)',
-                borderRadius:'18px', padding:'18px 24px',
-                display:'flex', alignItems:'center', justifyContent:'space-between',
-                animation: mounted ? 'fadeUp 0.5s ease 0.25s both' : 'none',
-                position:'relative', overflow:'hidden',
-              }}>
+              {/* Reminder Banner */}
+              <div style={{ background:'linear-gradient(135deg,rgba(139,92,246,0.3),rgba(99,102,241,0.3))', backdropFilter:'blur(20px)', border:'1px solid rgba(139,92,246,0.35)', borderRadius:'18px', padding:'18px 24px', display:'flex', alignItems:'center', justifyContent:'space-between', animation: mounted ? 'fadeUp 0.5s ease 0.25s both' : 'none', position:'relative', overflow:'hidden' }}>
                 <div style={{ position:'absolute', top:'-30px', left:'-30px', width:'120px', height:'120px', borderRadius:'50%', background:'rgba(139,92,246,0.12)', filter:'blur(30px)', pointerEvents:'none' }} />
                 <div>
                   <p style={{ color:'rgba(180,210,255,0.5)', fontSize:'11px', fontWeight:600, letterSpacing:'0.1em', textTransform:'uppercase' as const, margin:'0 0 2px' }}>Tonight's Target</p>
@@ -324,16 +329,12 @@ export function SleepPage() {
                 <div style={card}>
                   <p style={{ color:'rgba(180,210,255,0.45)', fontSize:'11px', fontWeight:600, letterSpacing:'0.1em', textTransform:'uppercase' as const, margin:'0 0 2px' }}>Weekly Trend</p>
                   <p style={{ color:'#e0f0ff', fontWeight:700, fontSize:'15px', margin:'0 0 16px' }}>7-Day Sleep Duration</p>
-                  <div style={{ height:'200px' }}>
-                    <Bar options={chartOpts} data={sleepDurationData} />
-                  </div>
+                  <div style={{ height:'200px' }}><Bar options={chartOpts} data={sleepDurationData} /></div>
                 </div>
                 <div style={card}>
                   <p style={{ color:'rgba(180,210,255,0.45)', fontSize:'11px', fontWeight:600, letterSpacing:'0.1em', textTransform:'uppercase' as const, margin:'0 0 2px' }}>Breakdown</p>
                   <p style={{ color:'#e0f0ff', fontWeight:700, fontSize:'15px', margin:'0 0 16px' }}>Sleep Stages</p>
-                  <div style={{ height:'200px' }}>
-                    <Doughnut options={doughnutOpts} data={sleepStagesData} />
-                  </div>
+                  <div style={{ height:'200px' }}><Doughnut options={doughnutOpts} data={sleepStagesData} /></div>
                 </div>
               </div>
 
@@ -341,36 +342,28 @@ export function SleepPage() {
               <div style={{ ...card, animation: mounted ? 'fadeUp 0.5s ease 0.35s both' : 'none' }}>
                 <p style={{ color:'rgba(180,210,255,0.45)', fontSize:'11px', fontWeight:600, letterSpacing:'0.1em', textTransform:'uppercase' as const, margin:'0 0 2px' }}>Consistency</p>
                 <p style={{ color:'#e0f0ff', fontWeight:700, fontSize:'15px', margin:'0 0 16px' }}>Bedtime Tracker</p>
-                <div style={{ height:'160px' }}>
-                  <Line options={chartOpts} data={bedtimeData} />
-                </div>
+                <div style={{ height:'160px' }}><Line options={chartOpts} data={bedtimeData} /></div>
               </div>
             </div>
 
-            {/* ── CHAT COLUMN ─────────────────────────────────── */}
+            {/* Chat */}
             <div style={{ animation: mounted ? 'fadeUp 0.5s ease 0.4s both' : 'none' }}>
               <ChatPanel
                 title="Sleep AI"
                 moduleKey="sleep"
                 responses={chatResponses}
                 defaultResponse="Your sleep metrics look healthy. Consistency is key to better rest."
-                autoMessages={[{ text: 'Average sleep is 7.2 hours with a quality score of 78/100. Try aiming for 8 hours tonight.', delay: 1500 }]}
+                autoMessages={[{ text: `Average sleep is ${avgHours || 7.2} hours. Try aiming for 8 hours tonight.`, delay: 1500 }]}
               />
             </div>
           </div>
         </div>
       </div>
 
-      {/* ── Log Sleep Modal ──────────────────────────────────────── */}
+      {/* Log Sleep Modal */}
       {showLogModal && (
-        <div
-          style={{ position:'fixed', inset:0, background:'rgba(0,5,20,0.7)', backdropFilter:'blur(6px)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:9999, animation:'fadeIn .25s ease' }}
-          onClick={() => setShowLogModal(false)}
-        >
-          <div
-            style={{ background:'#0d1a38', border:'1px solid rgba(139,92,246,0.3)', borderRadius:'22px', padding:'36px', width:'100%', maxWidth:'460px', boxShadow:'0 20px 60px rgba(0,0,0,0.6)', animation:'fadeUp .3s ease' }}
-            onClick={e => e.stopPropagation()}
-          >
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,5,20,0.7)', backdropFilter:'blur(6px)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:9999, animation:'fadeIn .25s ease' }} onClick={() => setShowLogModal(false)}>
+          <div style={{ background:'#0d1a38', border:'1px solid rgba(139,92,246,0.3)', borderRadius:'22px', padding:'36px', width:'100%', maxWidth:'460px', boxShadow:'0 20px 60px rgba(0,0,0,0.6)', animation:'fadeUp .3s ease' }} onClick={e => e.stopPropagation()}>
             <div style={{ display:'flex', alignItems:'center', gap:'12px', marginBottom:'28px' }}>
               <div style={{ width:40, height:40, borderRadius:'12px', background:'rgba(139,92,246,0.2)', display:'flex', alignItems:'center', justifyContent:'center' }}>
                 <Moon size={20} color="#a78bfa" />
@@ -383,20 +376,17 @@ export function SleepPage() {
 
             <form onSubmit={handleLogSubmit}>
               {[
-                { label:'Hours Slept', key:'hours', type:'number', placeholder:'e.g. 7.5', step:'0.1' },
-                { label:'Bedtime',     key:'bedtime',  type:'time', placeholder:'' },
-                { label:'Wake Time',   key:'waketime', type:'time', placeholder:'' },
+                { label:'Hours Slept', key:'hours',    type:'number', placeholder:'e.g. 7.5', step:'0.1' },
+                { label:'Bedtime',     key:'bedtime',  type:'time',   placeholder:'' },
+                { label:'Wake Time',   key:'waketime', type:'time',   placeholder:'' },
               ].map(f => (
                 <div key={f.key} style={{ marginBottom:'16px' }}>
                   <label style={{ display:'block', color:'rgba(180,210,255,0.8)', fontSize:'12px', fontWeight:600, letterSpacing:'0.06em', textTransform:'uppercase' as const, marginBottom:'6px' }}>{f.label}</label>
                   <input
-                    type={f.type}
-                    step={(f as any).step}
-                    className="sleep-input"
+                    type={f.type} step={(f as any).step} className="sleep-input"
                     value={logData[f.key as keyof typeof logData]}
                     onChange={e => setLogData({...logData, [f.key]: e.target.value})}
-                    required
-                    placeholder={f.placeholder}
+                    required placeholder={f.placeholder}
                   />
                 </div>
               ))}
@@ -413,21 +403,16 @@ export function SleepPage() {
               </div>
 
               <div style={{ display:'flex', gap:'10px' }}>
-                <button
-                  type="submit"
-                  style={{ flex:1, padding:'13px', background:'linear-gradient(135deg,#8b5cf6,#6366f1)', border:'none', borderRadius:'12px', color:'#fff', fontWeight:700, fontSize:'14px', cursor:'pointer', boxShadow:'0 4px 18px rgba(139,92,246,0.35)', transition:'all .2s' }}
-                  onMouseEnter={e => { e.currentTarget.style.opacity='0.9'; e.currentTarget.style.transform='translateY(-1px)'; }}
-                  onMouseLeave={e => { e.currentTarget.style.opacity='1'; e.currentTarget.style.transform='translateY(0)'; }}
-                >
-                  Save Sleep Log
+                <button type="submit" disabled={saving}
+                  style={{ flex:1, padding:'13px', background: saving ? 'rgba(139,92,246,0.4)' : 'linear-gradient(135deg,#8b5cf6,#6366f1)', border:'none', borderRadius:'12px', color:'#fff', fontWeight:700, fontSize:'14px', cursor: saving ? 'not-allowed' : 'pointer', boxShadow:'0 4px 18px rgba(139,92,246,0.35)', transition:'all .2s' }}
+                  onMouseEnter={e => { if(!saving){ e.currentTarget.style.opacity='0.9'; e.currentTarget.style.transform='translateY(-1px)'; }}}
+                  onMouseLeave={e => { e.currentTarget.style.opacity='1'; e.currentTarget.style.transform='translateY(0)'; }}>
+                  {saving ? 'Saving...' : 'Save Sleep Log'}
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setShowLogModal(false)}
+                <button type="button" onClick={() => setShowLogModal(false)}
                   style={{ flex:1, padding:'13px', background:'rgba(255,255,255,0.07)', border:'1px solid rgba(100,180,255,0.2)', borderRadius:'12px', color:'rgba(180,210,255,0.8)', fontWeight:700, fontSize:'14px', cursor:'pointer', transition:'all .2s' }}
                   onMouseEnter={e => { e.currentTarget.style.background='rgba(255,255,255,0.12)'; }}
-                  onMouseLeave={e => { e.currentTarget.style.background='rgba(255,255,255,0.07)'; }}
-                >
+                  onMouseLeave={e => { e.currentTarget.style.background='rgba(255,255,255,0.07)'; }}>
                   Cancel
                 </button>
               </div>

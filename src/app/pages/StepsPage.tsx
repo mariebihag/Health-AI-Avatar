@@ -8,6 +8,7 @@ import { ChatPanel } from '../components/ChatPanel';
 import { Footprints, MapPin, Clock, TrendingUp } from 'lucide-react';
 import { toast } from 'sonner';
 import { useResponsive } from '../hooks/useResponsive';
+import { databases, DATABASE_ID, COLLECTIONS, ID, account } from '../../lib/appwrite';
 import '../styles/dashboard.css';
 
 const stepsImg  = '/assets/steps.png';
@@ -18,10 +19,11 @@ const MemoSidebar = memo(Sidebar);
 
 export function StepsPage() {
   const [showLogModal, setShowLogModal] = useState(false);
-  const [mounted, setMounted] = useState(false);
-  const { isMobile, isTablet } = useResponsive();
-  const [currentSteps, setCurrentSteps] = useState(7400);
-  const [logData, setLogData] = useState({
+  const [mounted, setMounted]           = useState(false);
+  const { isMobile, isTablet }          = useResponsive();
+  const [currentSteps, setCurrentSteps] = useState(0);
+  const [saving, setSaving]             = useState(false);
+  const [logData, setLogData]           = useState({
     steps: '', activity: 'walking', duration: '', notes: '',
   });
 
@@ -32,14 +34,64 @@ export function StepsPage() {
   const streak     = 5;
   const goalMet    = currentSteps >= goal;
 
-  useEffect(() => { setMounted(true); }, []);
+  useEffect(() => {
+    setMounted(true);
+    loadTodaySteps();
+  }, []);
 
-  const handleLogSubmit = (e: React.FormEvent) => {
+  /* ── Load today's total steps from Appwrite ───────────────────── */
+  const loadTodaySteps = async () => {
+    try {
+      const user = await account.get();
+      const today = new Date().toISOString().split('T')[0];
+      const res = await databases.listDocuments(
+        DATABASE_ID,
+        COLLECTIONS.steps,
+      );
+      // Sum all steps logged today by this user
+      const todayDocs = res.documents.filter(doc =>
+        doc.userID === user.$id && doc.date === today
+      );
+      const total = todayDocs.reduce((sum, doc) => sum + (doc.steps || 0), 0);
+      setCurrentSteps(total);
+    } catch (err) {
+      console.error('❌ Load steps error:', err);
+    }
+  };
+
+  /* ── Save steps to Appwrite ───────────────────────────────────── */
+  const handleLogSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setCurrentSteps(prev => prev + parseInt(logData.steps || '0'));
-    toast.success('Steps logged!');
-    setShowLogModal(false);
-    setLogData({ steps:'', activity:'walking', duration:'', notes:'' });
+    setSaving(true);
+    try {
+      const user  = await account.get();
+      const steps = parseInt(logData.steps || '0');
+      const today = new Date().toISOString().split('T')[0];
+
+      const doc = await databases.createDocument(
+        DATABASE_ID,
+        COLLECTIONS.steps,
+        ID.unique(),
+        {
+          userID:         user.$id,
+          steps:          steps,
+          distanceKm:     parseFloat((steps * 0.0007).toFixed(2)),
+          caloriesBurned: Math.round(steps * 0.04),
+          date:           today,
+          loggedAt:       new Date().toISOString(),
+        }
+      );
+      console.log('✅ Steps saved:', doc);
+      setCurrentSteps(prev => prev + steps);
+      toast.success('Steps logged!');
+      setShowLogModal(false);
+      setLogData({ steps:'', activity:'walking', duration:'', notes:'' });
+    } catch (err) {
+      console.error('❌ Save steps error:', err);
+      toast.error('Failed to save steps. Check console.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const chatResponses = {
@@ -94,17 +146,17 @@ export function StepsPage() {
   };
 
   const metrics = [
-    { label:'Today\'s Steps', value: currentSteps.toLocaleString(), unit:'',    color:'#22c55e', icon:Footprints, desc:`${percentage.toFixed(0)}% of goal` },
-    { label:'Distance',       value: distance,                       unit:'km',  color:'#3b82f6', icon:MapPin,    desc:'Total covered' },
-    { label:'Active Minutes', value: '78',                           unit:'min', color:'#f59e0b', icon:Clock,     desc:'Movement time' },
-    { label:'Remaining',      value: remaining.toLocaleString(),     unit:'',    color:'#a78bfa', icon:TrendingUp,desc:'Steps to goal' },
+    { label:"Today's Steps", value: currentSteps.toLocaleString(), unit:'',    color:'#22c55e', icon:Footprints, desc:`${percentage.toFixed(0)}% of goal` },
+    { label:'Distance',      value: distance,                       unit:'km',  color:'#3b82f6', icon:MapPin,    desc:'Total covered' },
+    { label:'Active Minutes',value: '78',                           unit:'min', color:'#f59e0b', icon:Clock,     desc:'Movement time' },
+    { label:'Remaining',     value: remaining.toLocaleString(),     unit:'',    color:'#a78bfa', icon:TrendingUp,desc:'Steps to goal' },
   ];
 
   const summaryStats = [
-    { label:'Avg Daily',    value:'7,850',  color:'#e0f0ff' },
-    { label:'Weekly Total', value:'54,900', color:'#e0f0ff' },
-    { label:'Best Day',     value:'10,200', color:'#22c55e' },
-    { label:'Streak',       value:`${streak} days`, color:'#fbbf24' },
+    { label:'Avg Daily',    value:'7,850',        color:'#e0f0ff' },
+    { label:'Weekly Total', value:'54,900',        color:'#e0f0ff' },
+    { label:'Best Day',     value:'10,200',        color:'#22c55e' },
+    { label:'Streak',       value:`${streak} days`,color:'#fbbf24' },
   ];
 
   return (
@@ -113,41 +165,32 @@ export function StepsPage() {
         @keyframes fadeUp   { from{opacity:0;transform:translateY(22px);} to{opacity:1;transform:translateY(0);} }
         @keyframes fadeIn   { from{opacity:0;} to{opacity:1;} }
         @keyframes ringPulse{ 0%{transform:scale(1);opacity:.6;} 100%{transform:scale(1.7);opacity:0;} }
-
-        /* Shoe bounces like taking a step */
         @keyframes shoeStep {
           0%,100%{ transform:rotate(-5deg) translateY(0) translateX(0); filter:drop-shadow(0 10px 24px rgba(34,197,94,0.4)); }
           25%    { transform:rotate(0deg) translateY(-12px) translateX(6px); filter:drop-shadow(0 20px 30px rgba(34,197,94,0.55)); }
           50%    { transform:rotate(4deg) translateY(-6px) translateX(12px); filter:drop-shadow(0 14px 26px rgba(34,197,94,0.45)); }
           75%    { transform:rotate(0deg) translateY(-2px) translateX(6px); }
         }
-        /* Medal sways */
         @keyframes medalSway {
           0%,100%{ transform:rotate(-4deg) translateY(0); filter:drop-shadow(0 0 28px rgba(251,191,36,0.5)); }
           50%    { transform:rotate(4deg) translateY(-6px); filter:drop-shadow(0 0 42px rgba(251,191,36,0.75)); }
         }
-        /* Streak pop */
         @keyframes streakPop {
           0%  { transform:scale(0) rotate(-20deg); opacity:0; }
           70% { transform:scale(1.1) rotate(4deg); opacity:1; }
           100%{ transform:scale(1) rotate(0deg); opacity:1; }
         }
-        /* Step bar fill */
         @keyframes barFill { from{ width:0%; } }
-        /* Pulse step dot */
         @keyframes stepDot {
           0%,100%{ transform:scale(1); opacity:.5; }
           50%    { transform:scale(1.4); opacity:1; }
         }
-
         .step-card:hover  { transform:translateY(-3px) !important; box-shadow:0 12px 40px rgba(34,197,94,0.2) !important; }
         .organ-card:hover { transform:translateY(-4px) scale(1.015) !important; }
         .log-btn:hover    { transform:translateY(-2px) !important; box-shadow:0 8px 24px rgba(34,197,94,0.45) !important; }
-
         .step-input { width:100%; padding:11px 14px; background:rgba(255,255,255,0.07); border:1px solid rgba(100,180,255,0.25); border-radius:10px; color:#e0f0ff; font-size:14px; outline:none; box-sizing:border-box; transition:all .2s; }
         .step-input:focus { border-color:rgba(34,197,94,0.7); background:rgba(255,255,255,0.11); box-shadow:0 0 0 3px rgba(34,197,94,0.15); }
         .step-input::placeholder { color:rgba(180,210,255,0.35); }
-
         ::-webkit-scrollbar { width:5px; }
         ::-webkit-scrollbar-track { background:transparent; }
         ::-webkit-scrollbar-thumb { background:rgba(34,197,94,0.25); border-radius:10px; }
@@ -189,7 +232,6 @@ export function StepsPage() {
 
                 {/* Shoe Card */}
                 <div style={{ ...card, border:'1px solid rgba(34,197,94,0.25)', display:'flex', flexDirection:'column', alignItems:'center', gap:'14px', padding:'28px 20px', position:'relative', overflow:'hidden' }} className="organ-card">
-                  {/* step trail dots */}
                   {[{left:'10%',d:0},{left:'30%',d:0.3},{left:'50%',d:0.6},{left:'70%',d:0.9}].map((p,i) => (
                     <div key={i} style={{ position:'absolute', bottom:'18px', left:p.left, width:7, height:7, borderRadius:'50%', background:'rgba(74,222,128,0.5)', animation:'stepDot 1.5s ease-in-out infinite', animationDelay:`${p.d}s`, pointerEvents:'none' }} />
                   ))}
@@ -210,7 +252,6 @@ export function StepsPage() {
                   <div style={{ position:'absolute', bottom:'-20px', left:'50%', transform:'translateX(-50%)', width:'180px', height:'90px', background:'rgba(251,191,36,0.08)', filter:'blur(35px)', borderRadius:'50%', pointerEvents:'none' }} />
                   <div style={{ position:'relative' }}>
                     <img src={goalMet ? medalImg : streakImg} alt={goalMet ? 'Medal' : 'Streak'} style={{ width:140, height:140, objectFit:'contain', animation: goalMet ? 'medalSway 3.5s ease-in-out infinite' : (mounted ? 'streakPop 0.6s cubic-bezier(.4,0,.2,1) 0.3s both' : 'none'), filter:`drop-shadow(0 0 28px rgba(251,191,36,${goalMet ? 0.6 : 0.4}))` }} />
-                    {/* verified badge */}
                     <div style={{ position:'absolute', bottom:8, right:0, width:38, height:38, borderRadius:'50%', background:'linear-gradient(135deg,#fbbf24,#f59e0b)', border:'3px solid rgba(8,20,50,0.9)', display:'flex', alignItems:'center', justifyContent:'center', boxShadow:'0 0 14px rgba(251,191,36,0.7)', animation: mounted ? 'streakPop 0.6s ease 0.6s both' : 'none' }}>
                       <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M20 6L9 17l-5-5" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/></svg>
                     </div>
@@ -343,7 +384,6 @@ export function StepsPage() {
                 <label style={{ display:'block', color:'rgba(180,210,255,0.8)', fontSize:'12px', fontWeight:600, letterSpacing:'0.06em', textTransform:'uppercase' as const, marginBottom:'6px' }}>Step Count</label>
                 <input type="number" className="step-input" placeholder="e.g. 2000" value={logData.steps} onChange={e => setLogData({...logData, steps: e.target.value})} required />
               </div>
-              {/* Quick add */}
               <div style={{ display:'flex', gap:'8px', marginBottom:'16px', flexWrap:'wrap' }}>
                 {[500,1000,2000,3000,5000].map(n => (
                   <button key={n} type="button" onClick={() => setLogData({...logData, steps: String(n)})}
@@ -367,12 +407,14 @@ export function StepsPage() {
                 <input type="text" className="step-input" placeholder="e.g. Morning walk in the park" value={logData.notes} onChange={e => setLogData({...logData, notes: e.target.value})} />
               </div>
               <div style={{ display:'flex', gap:'10px' }}>
-                <button type="submit" style={{ flex:1, padding:'13px', background:'linear-gradient(135deg,#22c55e,#16a34a)', border:'none', borderRadius:'12px', color:'#fff', fontWeight:700, fontSize:'14px', cursor:'pointer', boxShadow:'0 4px 18px rgba(34,197,94,0.35)', transition:'all .2s' }}
-                  onMouseEnter={e => { e.currentTarget.style.opacity='0.9'; e.currentTarget.style.transform='translateY(-1px)'; }}
+                <button type="submit" disabled={saving}
+                  style={{ flex:1, padding:'13px', background: saving ? 'rgba(34,197,94,0.4)' : 'linear-gradient(135deg,#22c55e,#16a34a)', border:'none', borderRadius:'12px', color:'#fff', fontWeight:700, fontSize:'14px', cursor: saving ? 'not-allowed' : 'pointer', boxShadow:'0 4px 18px rgba(34,197,94,0.35)', transition:'all .2s' }}
+                  onMouseEnter={e => { if(!saving){ e.currentTarget.style.opacity='0.9'; e.currentTarget.style.transform='translateY(-1px)'; }}}
                   onMouseLeave={e => { e.currentTarget.style.opacity='1'; e.currentTarget.style.transform='translateY(0)'; }}>
-                  Save Steps
+                  {saving ? 'Saving...' : 'Save Steps'}
                 </button>
-                <button type="button" onClick={() => setShowLogModal(false)} style={{ flex:1, padding:'13px', background:'rgba(255,255,255,0.07)', border:'1px solid rgba(100,180,255,0.2)', borderRadius:'12px', color:'rgba(180,210,255,0.8)', fontWeight:700, fontSize:'14px', cursor:'pointer', transition:'all .2s' }}
+                <button type="button" onClick={() => setShowLogModal(false)}
+                  style={{ flex:1, padding:'13px', background:'rgba(255,255,255,0.07)', border:'1px solid rgba(100,180,255,0.2)', borderRadius:'12px', color:'rgba(180,210,255,0.8)', fontWeight:700, fontSize:'14px', cursor:'pointer', transition:'all .2s' }}
                   onMouseEnter={e => e.currentTarget.style.background='rgba(255,255,255,0.12)'}
                   onMouseLeave={e => e.currentTarget.style.background='rgba(255,255,255,0.07)'}>
                   Cancel

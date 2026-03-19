@@ -11,6 +11,7 @@ import { JournalPage } from "./pages/JournalPage.tsx";
 import { MeditationPage } from "./pages/MeditationPage.tsx";
 import { MoodTrackerPage } from "./pages/MoodTrackerPage.tsx";
 
+
 export const router = createBrowserRouter([
   {
     path: "/",

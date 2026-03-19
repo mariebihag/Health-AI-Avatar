@@ -2,12 +2,12 @@ import { useState, useEffect, useRef, memo } from 'react';
 import { useNavigate } from 'react-router';
 import { Sidebar } from '../components/Sidebar';
 import { Header } from '../components/Header';
-import { Brain, Plus, X, Play, Pause, RotateCcw, ChevronLeft } from 'lucide-react';
+import { Brain, Plus, X, Play, Pause, RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
 import { useResponsive } from '../hooks/useResponsive';
+import { databases, DATABASE_ID, COLLECTIONS, ID, account } from '../../lib/appwrite';
 import '../styles/dashboard.css';
 
-/* ── Assets ─────────────────────────────────────────────────────── */
 const meditationPink   = '/assets/meditationpink.png';
 const meditationGreen  = '/assets/meditationgreen.png';
 const meditationPurple = '/assets/meditationpurple.png';
@@ -20,10 +20,15 @@ const streakImg        = '/assets/streak.png';
 
 const MemoSidebar = memo(Sidebar);
 
-/* ── Data ────────────────────────────────────────────────────────── */
 interface MedSession {
-  id: number; date: string; type: string;
-  duration: string; durationSec: number; notes: string; color: string;
+  id: string;
+  date: string;
+  type: string;
+  duration: string;
+  durationSec: number;
+  completedMins: number;
+  notes: string;
+  color: string;
 }
 
 const TYPE_COLORS: Record<string, string> = {
@@ -35,7 +40,6 @@ const TYPE_COLORS: Record<string, string> = {
   'Breathing':     '#38bdf8',
 };
 
-// Each session type maps to a meditation figure PNG
 const TYPE_FIGURES: Record<string, string> = {
   'Morning Calm':  meditationYellow,
   'Sleep Prep':    meditationPurple,
@@ -44,14 +48,6 @@ const TYPE_FIGURES: Record<string, string> = {
   'Body Scan':     meditationPink,
   'Breathing':     meditationBlue,
 };
-
-const SAMPLE_SESSIONS: MedSession[] = [
-  { id:1, date:'Today, 7:00 AM',     type:'Morning Calm',  duration:'10 min', durationSec:600,  notes:'Box breathing session. Felt very centered and grounded after.',     color:'#a78bfa' },
-  { id:2, date:'Yesterday, 9:30 PM', type:'Sleep Prep',    duration:'15 min', durationSec:900,  notes:'Body scan before bed. Fell asleep within 10 minutes — amazing!',   color:'#818cf8' },
-  { id:3, date:'Mon, 12:30 PM',      type:'Stress Relief', duration:'5 min',  durationSec:300,  notes:'4-7-8 breathing during lunch break. Stress dropped noticeably.',   color:'#34d399' },
-  { id:4, date:'Sun, 8:00 AM',       type:'Focus',         duration:'20 min', durationSec:1200, notes:'Visualization before a big presentation. Felt prepared and calm.',  color:'#fbbf24' },
-  { id:5, date:'Sat, 10:00 AM',      type:'Body Scan',     duration:'12 min', durationSec:720,  notes:'Checked in with each muscle group. Noticed tension in shoulders.', color:'#f472b6' },
-];
 
 const DURATIONS = [
   { label:'3 min',  sec:180  },
@@ -67,23 +63,23 @@ const BREATHING_PATTERNS = [
   { label:'Calm (4-6)',    steps:['Inhale 4s','Exhale 6s'],                      durations:[4,6]     },
 ];
 
-/* ── Featured sessions for hero cards ──────────────────────────── */
 const FEATURED = [
-  { title:'Morning Awakening', tag:'Serenity',   minutes:9,  img:meditationYellow, color:'#fbbf24', glow:'rgba(251,191,36,0.4)',  bg:'rgba(251,191,36,0.08)' },
-  { title:'Relax Mode',        tag:'Deep Rest',  minutes:15, img:meditationPink,   color:'#f472b6', glow:'rgba(244,114,182,0.4)', bg:'rgba(244,114,182,0.08)' },
-  { title:'Calm Focus',        tag:'Clarity',    minutes:10, img:meditationBlue,   color:'#38bdf8', glow:'rgba(56,189,248,0.4)',  bg:'rgba(56,189,248,0.08)' },
-  { title:'Body Wisdom',       tag:'Calming',    minutes:12, img:meditationGreen,  color:'#34d399', glow:'rgba(52,211,153,0.4)',  bg:'rgba(52,211,153,0.08)' },
+  { title:'Morning Awakening', tag:'Serenity',  minutes:9,  img:meditationYellow, color:'#fbbf24', glow:'rgba(251,191,36,0.4)',  bg:'rgba(251,191,36,0.08)' },
+  { title:'Relax Mode',        tag:'Deep Rest', minutes:15, img:meditationPink,   color:'#f472b6', glow:'rgba(244,114,182,0.4)', bg:'rgba(244,114,182,0.08)' },
+  { title:'Calm Focus',        tag:'Clarity',   minutes:10, img:meditationBlue,   color:'#38bdf8', glow:'rgba(56,189,248,0.4)',  bg:'rgba(56,189,248,0.08)' },
+  { title:'Body Wisdom',       tag:'Calming',   minutes:12, img:meditationGreen,  color:'#34d399', glow:'rgba(52,211,153,0.4)',  bg:'rgba(52,211,153,0.08)' },
 ];
 
 export function MeditationPage() {
   const navigate = useNavigate();
-  const [mounted, setMounted] = useState(false);
-  const { isMobile, isTablet } = useResponsive();
-  const [sessions, setSessions]         = useState<MedSession[]>(SAMPLE_SESSIONS);
+  const [mounted, setMounted]           = useState(false);
+  const { isMobile, isTablet }          = useResponsive();
+  const [sessions, setSessions]         = useState<MedSession[]>([]);
   const [showForm, setShowForm]         = useState(false);
   const [type, setType]                 = useState('Morning Calm');
   const [duration, setDuration]         = useState(DURATIONS[2]);
   const [notes, setNotes]               = useState('');
+  const [saving, setSaving]             = useState(false);
   const [timerActive, setTimerActive]   = useState(false);
   const [timerSec, setTimerSec]         = useState(DURATIONS[2].sec);
   const [timerTotal, setTimerTotal]     = useState(DURATIONS[2].sec);
@@ -96,13 +92,44 @@ export function MeditationPage() {
   const breathRef    = useRef<any>(null);
   const breathSecRef = useRef(0);
 
-  useEffect(() => { setMounted(true); }, []);
+  useEffect(() => {
+    setMounted(true);
+    loadSessions();
+  }, []);
+
+  /* ── Load sessions from Appwrite ──────────────────────────────── */
+  const loadSessions = async () => {
+    try {
+      const user = await account.get();
+      const res  = await databases.listDocuments(DATABASE_ID, COLLECTIONS.meditation);
+      const mine = res.documents.filter(d => d.userID === user.$id);
+      const mapped: MedSession[] = mine.map(doc => ({
+        id:            doc.$id,
+        date:          new Date(doc.loggedAt).toLocaleString(),
+        type:          doc.sessionType   || 'Morning Calm',
+        duration:      `${doc.durationMinutes} min`,
+        durationSec:   doc.durationMinutes * 60,
+        completedMins: doc.completedMins  || 0,
+        notes:         '',
+        color:         TYPE_COLORS[doc.sessionType] || '#a78bfa',
+      }));
+      setSessions(mapped);
+    } catch (err) {
+      console.error('❌ Load meditation error:', err);
+    }
+  };
 
   useEffect(() => {
     if (timerActive && timerSec > 0) {
       intervalRef.current = setInterval(() => {
         setTimerSec(p => {
-          if (p <= 1) { setTimerActive(false); setTimerDone(true); clearInterval(intervalRef.current); toast.success('Meditation session complete!'); return 0; }
+          if (p <= 1) {
+            setTimerActive(false);
+            setTimerDone(true);
+            clearInterval(intervalRef.current);
+            toast.success('Meditation session complete!');
+            return 0;
+          }
           return p - 1;
         });
       }, 1000);
@@ -122,7 +149,9 @@ export function MeditationPage() {
           setBreathStep(p => (p + 1) % selectedBreath.steps.length);
         }
       }, 100);
-    } else { clearInterval(breathRef.current); }
+    } else {
+      clearInterval(breathRef.current);
+    }
     return () => clearInterval(breathRef.current);
   }, [timerActive, breathStep, selectedBreath]);
 
@@ -131,16 +160,54 @@ export function MeditationPage() {
   const resetTimer  = () => { setTimerActive(false); setTimerSec(timerTotal); setTimerDone(false); setBreathStep(0); setBreathProg(0); };
   const setTimerDur = (d: typeof DURATIONS[0]) => { setDuration(d); setTimerTotal(d.sec); setTimerSec(d.sec); setTimerActive(false); setTimerDone(false); };
 
-  const addSession = () => {
-    const d = new Date(); const h = d.getHours();
-    const dateStr = `Today, ${h}:${String(d.getMinutes()).padStart(2,'0')} ${h>=12?'PM':'AM'}`;
-    setSessions(p => [{ id:Date.now(), date:dateStr, type, duration:duration.label, durationSec:duration.sec, notes, color: TYPE_COLORS[type]||'#a78bfa' }, ...p]);
-    toast.success('Session logged!');
-    setNotes(''); setShowForm(false);
+  /* ── Save session to Appwrite ─────────────────────────────────── */
+  const addSession = async () => {
+    setSaving(true);
+    try {
+      const user         = await account.get();
+      const today        = new Date().toISOString().split('T')[0];
+      const durationMins = Math.round(duration.sec / 60);
+      const completed    = Math.round((timerTotal - timerSec) / 60);
+
+      const doc = await databases.createDocument(
+        DATABASE_ID,
+        COLLECTIONS.meditation,
+        ID.unique(),
+        {
+          userID:          user.$id,
+          sessionType:     type,
+          durationMinutes: durationMins,
+          completedMins:   Math.max(completed, 1),
+          date:            today,
+          loggedAt:        new Date().toISOString(),
+        }
+      );
+      console.log('✅ Meditation saved:', doc);
+
+      const newSession: MedSession = {
+        id:            doc.$id,
+        date:          'Just now',
+        type,
+        duration:      duration.label,
+        durationSec:   duration.sec,
+        completedMins: Math.max(completed, 1),
+        notes,
+        color:         TYPE_COLORS[type] || '#a78bfa',
+      };
+      setSessions(p => [newSession, ...p]);
+      toast.success('Session logged!');
+      setNotes('');
+      setShowForm(false);
+    } catch (err) {
+      console.error('❌ Save meditation error:', err);
+      toast.error('Failed to save session. Check console.');
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const formatTime = (s: number) => `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
-  const progress   = ((timerTotal - timerSec) / timerTotal) * 100;
+  const formatTime   = (s: number) => `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
+  const progress     = ((timerTotal - timerSec) / timerTotal) * 100;
   const r = 72; const circ = 2 * Math.PI * r;
   const totalMinutes = sessions.reduce((a,b) => a + b.durationSec/60, 0);
   const streak = 5;
@@ -159,65 +226,44 @@ export function MeditationPage() {
         @keyframes fadeUp   { from{opacity:0;transform:translateY(22px);} to{opacity:1;transform:translateY(0);} }
         @keyframes fadeIn   { from{opacity:0;} to{opacity:1;} }
         @keyframes ringPulse{ 0%{transform:scale(1);opacity:.6;} 100%{transform:scale(1.7);opacity:0;} }
-
-        /* Lotus flower blooms and pulses */
         @keyframes lotusBloom {
           0%,100%{ transform:scale(1) rotate(0deg); filter:drop-shadow(0 0 20px rgba(244,114,182,0.4)) brightness(1); }
           50%    { transform:scale(1.06) rotate(3deg); filter:drop-shadow(0 0 40px rgba(244,114,182,0.7)) brightness(1.1); }
         }
-        /* Meditation flower glows */
-        @keyframes flowerGlow {
-          0%,100%{ filter:drop-shadow(0 0 18px rgba(167,139,250,0.5)) brightness(1); transform:scale(1); }
-          50%    { filter:drop-shadow(0 0 36px rgba(167,139,250,0.85)) brightness(1.12); transform:scale(1.04); }
-        }
-        /* Figure breathes — scales with breath */
         @keyframes figureBreath {
           0%,100%{ transform:scale(1) translateY(0); filter:drop-shadow(0 8px 30px var(--fig-glow)); }
           50%    { transform:scale(1.05) translateY(-6px); filter:drop-shadow(0 16px 45px var(--fig-glow)); }
         }
-        /* Clock wobble */
         @keyframes clockTick {
           0%,100%{ transform:rotate(-2deg); filter:drop-shadow(0 0 14px rgba(251,191,36,0.4)); }
           50%    { transform:rotate(2deg);  filter:drop-shadow(0 0 24px rgba(251,191,36,0.65)); }
         }
-        /* Streak pop */
         @keyframes streakPop {
           0%  { transform:scale(0) rotate(-20deg); opacity:0; }
           70% { transform:scale(1.1) rotate(4deg); opacity:1; }
           100%{ transform:scale(1) rotate(0deg); opacity:1; }
         }
-        /* Petal float particles */
         @keyframes petalFloat {
           0%  { transform:translateY(0) rotate(0deg) translateX(0); opacity:.8; }
           100%{ transform:translateY(-80px) rotate(120deg) translateX(20px); opacity:0; }
         }
-        /* Breath ring expand */
         @keyframes breathExpand {
           0%,100%{ transform:scale(1); opacity:.4; }
           50%    { transform:scale(1.25); opacity:.1; }
         }
-        /* Hero card slide */
-        @keyframes heroSlide {
-          from{ opacity:0; transform:translateX(-12px); }
-          to  { opacity:1; transform:translateX(0); }
-        }
-        /* Shimmer on flower bg */
         @keyframes shimmer {
           0%  { transform:translateX(-100%); }
           100%{ transform:translateX(100%); }
         }
-
         .feat-card:hover { transform:translateY(-5px) scale(1.02) !important; }
         .feat-card { transition: all 0.3s cubic-bezier(.4,0,.2,1); }
         .session-item { transition: all 0.2s ease; }
         .session-item:hover { transform:translateX(4px) !important; background:rgba(180,150,255,0.07) !important; border-color:rgba(167,139,250,0.25) !important; }
         .dur-btn:hover { background:rgba(167,139,250,0.2) !important; color:#c4b5fd !important; }
         .breath-btn:hover { background:rgba(167,139,250,0.15) !important; }
-
         .med-input { width:100%; padding:11px 14px; background:rgba(255,255,255,0.07); border:1px solid rgba(167,139,250,0.25); border-radius:10px; color:#e0f0ff; font-size:14px; outline:none; box-sizing:border-box; transition:all .2s; }
         .med-input:focus { border-color:rgba(167,139,250,0.6); background:rgba(255,255,255,0.1); box-shadow:0 0 0 3px rgba(167,139,250,0.12); }
         .med-input::placeholder { color:rgba(180,210,255,0.35); }
-
         ::-webkit-scrollbar { width:5px; }
         ::-webkit-scrollbar-track { background:transparent; }
         ::-webkit-scrollbar-thumb { background:rgba(167,139,250,0.3); border-radius:10px; }
@@ -256,30 +302,17 @@ export function MeditationPage() {
                 </button>
               </div>
 
-              {/* Hero — Blooming Flower Banner */}
-              <div style={{
-                ...card,
-                padding:0, overflow:'hidden', position:'relative',
-                border:'1px solid rgba(244,114,182,0.2)',
-                boxShadow:'0 8px 40px rgba(167,139,250,0.2)',
-                animation: mounted ? 'fadeUp 0.5s ease 0.1s both' : 'none',
-                minHeight:'200px',
-              }}>
-                {/* Lotus flower full-bleed bg */}
+              {/* Hero Banner */}
+              <div style={{ ...card, padding:0, overflow:'hidden', position:'relative', border:'1px solid rgba(244,114,182,0.2)', boxShadow:'0 8px 40px rgba(167,139,250,0.2)', animation: mounted ? 'fadeUp 0.5s ease 0.1s both' : 'none', minHeight:'200px' }}>
                 <div style={{ position:'absolute', inset:0, backgroundImage:`url(${lotusFlower})`, backgroundSize:'cover', backgroundPosition:'center', opacity:0.25 }} />
-                {/* Gradient overlay */}
                 <div style={{ position:'absolute', inset:0, background:'linear-gradient(135deg, rgba(8,20,50,0.7) 0%, rgba(139,92,246,0.3) 50%, rgba(244,114,182,0.25) 100%)' }} />
-                {/* Shimmer */}
                 <div style={{ position:'absolute', inset:0, overflow:'hidden', pointerEvents:'none' }}>
                   <div style={{ position:'absolute', top:0, left:0, right:0, bottom:0, background:'linear-gradient(90deg,transparent,rgba(255,255,255,0.06),transparent)', animation:'shimmer 4s ease infinite' }} />
                 </div>
-                {/* Petal particles */}
                 {[{left:'10%',d:0},{left:'30%',d:1},{left:'60%',d:2},{left:'80%',d:0.5},{left:'50%',d:1.5}].map((p,i) => (
                   <div key={i} style={{ position:'absolute', bottom:'20px', left:p.left, width:8, height:8, borderRadius:'50% 20%', background:'rgba(244,114,182,0.5)', animation:`petalFloat 3s ease-in-out infinite`, animationDelay:`${p.d}s`, pointerEvents:'none', transform:'rotate(45deg)' }} />
                 ))}
-
                 <div style={{ position:'relative', zIndex:1, padding:'28px', display:'flex', alignItems:'center', gap:'24px' }}>
-                  {/* Meditation flower */}
                   <div style={{ position:'relative', flexShrink:0 }}>
                     <div style={{ position:'absolute', inset:'-12px', borderRadius:'50%', background:'rgba(244,114,182,0.12)', animation:'breathExpand 4s ease-in-out infinite' }} />
                     <img src={meditationFlower} alt="Lotus" style={{ width:100, height:100, objectFit:'cover', borderRadius:'50%', animation:'lotusBloom 4s ease-in-out infinite', filter:'drop-shadow(0 0 20px rgba(244,114,182,0.55)) brightness(1.1)', border:'2px solid rgba(244,114,182,0.4)' }} />
@@ -290,9 +323,9 @@ export function MeditationPage() {
                     <p style={{ color:'rgba(220,180,255,0.65)', fontSize:'13px', margin:'0 0 14px', maxWidth:'260px', lineHeight:1.5 }}>Let your mind bloom like a lotus — rooted in stillness, rising through clarity.</p>
                     <div style={{ display:'flex', gap:'10px', flexWrap:'wrap' }}>
                       {[
-                        { v: sessions.length,              l:'Sessions',     c:'#c4b5fd' },
-                        { v: Math.round(totalMinutes),     l:'Minutes',      c:'#f9a8d4' },
-                        { v: `${streak} days`,             l:'Streak',       c:'#fbbf24' },
+                        { v: sessions.length,          l:'Sessions', c:'#c4b5fd' },
+                        { v: Math.round(totalMinutes), l:'Minutes',  c:'#f9a8d4' },
+                        { v: `${streak} days`,         l:'Streak',   c:'#fbbf24' },
                       ].map(s => (
                         <div key={s.l} style={{ background:'rgba(255,255,255,0.08)', borderRadius:'10px', padding:'7px 14px', textAlign:'center' }}>
                           <p style={{ color:s.c, fontWeight:800, fontSize:'16px', margin:0 }}>{s.v}</p>
@@ -304,19 +337,12 @@ export function MeditationPage() {
                 </div>
               </div>
 
-              {/* Featured Session Cards */}
+              {/* Featured Cards */}
               <div style={{ animation: mounted ? 'fadeUp 0.5s ease 0.18s both' : 'none' }}>
                 <p style={{ color:'rgba(180,210,255,0.4)', fontSize:'11px', fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', margin:'0 0 12px' }}>Featured Sessions</p>
                 <div style={{ display:'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap:'12px' }}>
                   {FEATURED.map((f, i) => (
-                    <div key={f.title} className="feat-card" style={{
-                      background:`rgba(8,20,50,0.8)`, backdropFilter:'blur(20px)',
-                      border:`1px solid ${f.color}33`,
-                      borderRadius:'18px', padding:'18px', position:'relative', overflow:'hidden', cursor:'pointer',
-                      boxShadow: activeFeatured === i ? `0 0 28px ${f.glow}` : '0 4px 16px rgba(0,0,0,0.3)',
-                      animationDelay:`${i*0.06}s`,
-                    }} onClick={() => setActiveFeatured(i)}>
-                      {/* Bg glow */}
+                    <div key={f.title} className="feat-card" style={{ background:`rgba(8,20,50,0.8)`, backdropFilter:'blur(20px)', border:`1px solid ${f.color}33`, borderRadius:'18px', padding:'18px', position:'relative', overflow:'hidden', cursor:'pointer', boxShadow: activeFeatured === i ? `0 0 28px ${f.glow}` : '0 4px 16px rgba(0,0,0,0.3)', animationDelay:`${i*0.06}s` }} onClick={() => setActiveFeatured(i)}>
                       <div style={{ position:'absolute', inset:0, background:f.bg, pointerEvents:'none' }} />
                       {activeFeatured === i && (
                         <div style={{ position:'absolute', top:8, right:8, width:8, height:8, borderRadius:'50%', background:f.color, boxShadow:`0 0 8px ${f.color}` }} />
@@ -338,15 +364,8 @@ export function MeditationPage() {
               </div>
 
               {/* Streak Card */}
-              <div style={{
-                ...card,
-                border:'1px solid rgba(251,191,36,0.25)', padding:'18px 22px',
-                display:'flex', alignItems:'center', gap:'18px',
-                animation: mounted ? 'fadeUp 0.5s ease 0.26s both' : 'none',
-                position:'relative', overflow:'hidden',
-              }}>
+              <div style={{ ...card, border:'1px solid rgba(251,191,36,0.25)', padding:'18px 22px', display:'flex', alignItems:'center', gap:'18px', animation: mounted ? 'fadeUp 0.5s ease 0.26s both' : 'none', position:'relative', overflow:'hidden' }}>
                 <div style={{ position:'absolute', right:'-20px', top:'-20px', width:'120px', height:'120px', borderRadius:'50%', background:'rgba(251,191,36,0.06)', filter:'blur(28px)', pointerEvents:'none' }} />
-                {/* Streak image */}
                 <div style={{ position:'relative', flexShrink:0 }}>
                   <img src={streakImg} alt="Streak" style={{ width:64, height:64, objectFit:'contain', animation: mounted ? 'streakPop 0.6s cubic-bezier(.4,0,.2,1) 0.4s both' : 'none', filter:'drop-shadow(0 0 14px rgba(251,191,36,0.6))' }} />
                   <div style={{ position:'absolute', bottom:-2, right:-4, width:22, height:22, borderRadius:'50%', background:'linear-gradient(135deg,#fbbf24,#f59e0b)', border:'2px solid rgba(8,20,50,0.9)', display:'flex', alignItems:'center', justifyContent:'center', boxShadow:'0 0 10px rgba(251,191,36,0.7)', animation: mounted ? 'streakPop 0.5s ease 0.65s both' : 'none' }}>
@@ -390,10 +409,11 @@ export function MeditationPage() {
                   </div>
                   <input placeholder="How did your session go?" value={notes} onChange={e => setNotes(e.target.value)} className="med-input" style={{ marginBottom:'14px' }} />
                   <div style={{ display:'flex', gap:'10px' }}>
-                    <button onClick={addSession} style={{ flex:1, padding:'12px', background:'linear-gradient(135deg,#8b5cf6,#6d28d9)', border:'none', borderRadius:'12px', color:'#fff', fontWeight:700, fontSize:'14px', cursor:'pointer', boxShadow:'0 4px 16px rgba(139,92,246,0.35)', transition:'all .2s' }}
-                      onMouseEnter={e => { e.currentTarget.style.opacity='0.9'; e.currentTarget.style.transform='translateY(-1px)'; }}
+                    <button onClick={addSession} disabled={saving}
+                      style={{ flex:1, padding:'12px', background: saving ? 'rgba(139,92,246,0.4)' : 'linear-gradient(135deg,#8b5cf6,#6d28d9)', border:'none', borderRadius:'12px', color:'#fff', fontWeight:700, fontSize:'14px', cursor: saving ? 'not-allowed' : 'pointer', boxShadow:'0 4px 16px rgba(139,92,246,0.35)', transition:'all .2s' }}
+                      onMouseEnter={e => { if(!saving){ e.currentTarget.style.opacity='0.9'; e.currentTarget.style.transform='translateY(-1px)'; }}}
                       onMouseLeave={e => { e.currentTarget.style.opacity='1'; e.currentTarget.style.transform='translateY(0)'; }}>
-                      Save Session
+                      {saving ? 'Saving...' : 'Save Session'}
                     </button>
                     <button onClick={() => setShowForm(false)} style={{ padding:'12px 16px', background:'rgba(255,255,255,0.07)', border:'1px solid rgba(100,180,255,0.2)', borderRadius:'12px', color:'rgba(180,210,255,0.7)', cursor:'pointer', transition:'all .2s', display:'flex', alignItems:'center' }}
                       onMouseEnter={e => e.currentTarget.style.background='rgba(255,255,255,0.12)'}
@@ -409,15 +429,7 @@ export function MeditationPage() {
             <div style={{ display:'flex', flexDirection:'column', gap:'20px' }}>
 
               {/* Timer Card */}
-              <div style={{
-                ...card,
-                border:'1px solid rgba(167,139,250,0.2)',
-                padding:'28px',
-                position:'relative', overflow:'hidden',
-                animation: mounted ? 'fadeUp 0.5s ease 0.12s both' : 'none',
-                boxShadow:'0 8px 40px rgba(139,92,246,0.15)',
-              }}>
-                {/* Bg petal image subtle */}
+              <div style={{ ...card, border:'1px solid rgba(167,139,250,0.2)', padding:'28px', position:'relative', overflow:'hidden', animation: mounted ? 'fadeUp 0.5s ease 0.12s both' : 'none', boxShadow:'0 8px 40px rgba(139,92,246,0.15)' }}>
                 <div style={{ position:'absolute', inset:0, backgroundImage:`url(${meditationFlower})`, backgroundSize:'cover', backgroundPosition:'center', opacity:0.04, borderRadius:'20px' }} />
                 <div style={{ position:'absolute', top:'-40px', right:'-40px', width:'200px', height:'200px', borderRadius:'50%', background:'rgba(167,139,250,0.06)', filter:'blur(50px)', pointerEvents:'none' }} />
 
@@ -427,11 +439,9 @@ export function MeditationPage() {
                       <p style={{ color:'rgba(180,210,255,0.45)', fontSize:'11px', fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', margin:'0 0 2px' }}>Timer</p>
                       <p style={{ color:'#e0f0ff', fontWeight:700, fontSize:'15px', margin:0 }}>Meditation Session</p>
                     </div>
-                    {/* Clock PNG */}
                     <img src={clockImg} alt="Clock" style={{ width:52, height:52, objectFit:'contain', animation:'clockTick 3s ease-in-out infinite', filter:'drop-shadow(0 0 10px rgba(251,191,36,0.4))' }} />
                   </div>
 
-                  {/* Duration selector */}
                   <div style={{ display:'flex', gap:'7px', marginBottom:'24px', flexWrap:'wrap' }}>
                     {DURATIONS.map(d => (
                       <button key={d.label} className="dur-btn" onClick={() => setTimerDur(d)}
@@ -441,9 +451,7 @@ export function MeditationPage() {
                     ))}
                   </div>
 
-                  {/* Circular timer + meditation figure */}
                   <div style={{ display:'flex', flexDirection:'column', alignItems:'center', marginBottom:'22px', position:'relative' }}>
-                    {/* Breath rings behind figure */}
                     {timerActive && (
                       <>
                         <div style={{ position:'absolute', width:'220px', height:'220px', borderRadius:'50%', border:`2px solid rgba(167,139,250,0.15)`, animation:'breathExpand 4s ease-in-out infinite' }} />
@@ -465,7 +473,6 @@ export function MeditationPage() {
                         </defs>
                       </svg>
 
-                      {/* Meditation figure inside ring */}
                       <div style={{ position:'absolute', inset:'12px', borderRadius:'50%', overflow:'hidden', display:'flex', alignItems:'center', justifyContent:'center', background:'rgba(8,20,50,0.6)' }}>
                         <img
                           src={timerDone ? meditationGreen : timerActive ? FEATURED[activeFeatured].img : meditationPurple}
@@ -487,7 +494,6 @@ export function MeditationPage() {
                       </div>
                     </div>
 
-                    {/* Breath guide */}
                     {timerActive && (
                       <div style={{ marginTop:'16px', textAlign:'center' }}>
                         <div style={{ background:'rgba(167,139,250,0.15)', border:'1px solid rgba(167,139,250,0.35)', borderRadius:'20px', padding:'8px 22px', display:'inline-block' }}>
@@ -503,7 +509,6 @@ export function MeditationPage() {
                     )}
                   </div>
 
-                  {/* Controls */}
                   <div style={{ display:'flex', justifyContent:'center', gap:'12px', marginBottom:'22px' }}>
                     {!timerActive && timerSec === timerTotal ? (
                       <button onClick={startTimer}
@@ -528,7 +533,6 @@ export function MeditationPage() {
                     )}
                   </div>
 
-                  {/* Breathing pattern */}
                   <div>
                     <p style={{ color:'rgba(180,210,255,0.35)', fontSize:'10px', fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', textAlign:'center', margin:'0 0 8px' }}>Breathing Pattern</p>
                     <div style={{ display:'flex', justifyContent:'center', gap:'8px', flexWrap:'wrap' }}>
@@ -548,7 +552,9 @@ export function MeditationPage() {
                 <p style={{ color:'rgba(180,210,255,0.45)', fontSize:'11px', fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', margin:'0 0 2px' }}>History</p>
                 <p style={{ color:'#e0f0ff', fontWeight:700, fontSize:'15px', margin:'0 0 16px' }}>Session Log</p>
                 <div style={{ display:'flex', flexDirection:'column', gap:'10px', maxHeight:'340px', overflowY:'auto' }}>
-                  {sessions.map((s, i) => {
+                  {sessions.length === 0 ? (
+                    <p style={{ color:'rgba(180,210,255,0.4)', fontSize:'13px', textAlign:'center', marginTop:'20px' }}>No sessions yet. Log your first meditation!</p>
+                  ) : sessions.map((s, i) => {
                     const fig = TYPE_FIGURES[s.type] || meditationPurple;
                     return (
                       <div key={s.id} className="session-item"
@@ -559,9 +565,7 @@ export function MeditationPage() {
                         <div style={{ flex:1, minWidth:0 }}>
                           <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'3px' }}>
                             <span style={{ color:'#e0f0ff', fontWeight:700, fontSize:'13px' }}>{s.type}</span>
-                            <div style={{ display:'flex', gap:'6px', alignItems:'center' }}>
-                              <span style={{ color:s.color, fontSize:'11px', fontWeight:700, background:`${s.color}18`, padding:'2px 8px', borderRadius:'6px' }}>{s.duration}</span>
-                            </div>
+                            <span style={{ color:s.color, fontSize:'11px', fontWeight:700, background:`${s.color}18`, padding:'2px 8px', borderRadius:'6px' }}>{s.duration}</span>
                           </div>
                           <p style={{ color:'rgba(180,210,255,0.35)', fontSize:'10px', margin:'0 0 4px' }}>{s.date}</p>
                           {s.notes && <p style={{ color:'rgba(180,210,255,0.55)', fontSize:'12px', margin:0, lineHeight:1.5, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{s.notes}</p>}
@@ -571,7 +575,6 @@ export function MeditationPage() {
                   })}
                 </div>
               </div>
-
             </div>
           </div>
         </div>

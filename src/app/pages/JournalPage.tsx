@@ -4,12 +4,14 @@ import { Header } from '../components/Header';
 import { BookOpen, Plus, X, Trash2, TrendingUp, Star } from 'lucide-react';
 import { toast } from 'sonner';
 import { useResponsive } from '../hooks/useResponsive';
+import { databases, DATABASE_ID, COLLECTIONS, ID } from '../../lib/appwrite';
+import { account } from '../../lib/appwrite';
 import '../styles/dashboard.css';
 
 /* ── Assets ─────────────────────────────────────────────────────── */
 const notebookImg = '/assets/notebook.png';
 
-/* ── Emotion PNGs (reuse from mood tracker) ─────────────────────── */
+/* ── Emotion PNGs ─────────────────────────────────────────────── */
 const EMOTION_IMGS: Record<string, string> = {
   '😄': '/assets/HappyEmotion.png',
   '😊': '/assets/CalmEmotion.png',
@@ -37,51 +39,128 @@ const MOOD_OPTIONS = ['😄','😊','😌','😐','😔','😰','😴','💪','�
 const TAG_OPTIONS  = ['sleep','energy','nutrition','stress','walk','hydration','recovery','cardio','meditation','rest','heart rate','run','milestone'];
 
 interface JournalEntry {
-  id: number; date: string; text: string; mood: string; tags: string[];
+  id: string;
+  date: string;
+  text: string;
+  mood: string;
+  tags: string[];
 }
-
-const SAMPLE_ENTRIES: JournalEntry[] = [
-  { id:1, date:'Today, 8:12 AM',     mood:'😄', tags:['sleep','energy','nutrition'], text:'Woke up feeling refreshed after 7.5hrs of sleep. Going to try hitting 10k steps today! Had a great breakfast with oats and fruit. Energy levels feel solid.' },
-  { id:2, date:'Yesterday, 9:45 PM', mood:'😌', tags:['walk','hydration','recovery'], text:"Skipped the gym but took a long evening walk along the park. Hydration was good — 2.3L today. Proud of that consistency. Legs feel a little sore from yesterday's run." },
-  { id:3, date:'Mon, 7:30 AM',       mood:'😰', tags:['stress','heart rate','meditation'], text:'Feeling a bit stressed about the week ahead. HR was elevated at 84 BPM this morning. Need to breathe more and take it slow. Did a 10-min meditation which helped.' },
-  { id:4, date:'Sun, 6:00 PM',       mood:'😄', tags:['rest','sleep','nutrition'], text:'Rest day today — fully deserved! Slept 8.5hrs last night and feel amazing. Meal-prepped for the week: lots of protein and veggies. Ready to crush Monday.' },
-  { id:5, date:'Sat, 10:00 AM',      mood:'💪', tags:['run','cardio','milestone'], text:'Morning run — 5km in 28 minutes! Personal best this month. Heart rate peaked at 158 BPM. Recovery was fast, back to 90 BPM within 5 minutes.' },
-];
 
 const MemoSidebar = memo(Sidebar);
 
 export function JournalPage() {
-  const [entries, setEntries]           = useState<JournalEntry[]>(SAMPLE_ENTRIES);
+  const [entries, setEntries]           = useState<JournalEntry[]>([]);
   const [showForm, setShowForm]         = useState(false);
   const [text, setText]                 = useState('');
   const [mood, setMood]                 = useState('😊');
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [filterMood, setFilterMood]     = useState('all');
-  const [expandedId, setExpandedId]     = useState<number | null>(null);
-  const [mounted, setMounted] = useState(false);
-  const { isMobile, isTablet } = useResponsive();
+  const [expandedId, setExpandedId]     = useState<string | null>(null);
+  const [mounted, setMounted]           = useState(false);
+  const [saving, setSaving]             = useState(false);
+  const [loading, setLoading]           = useState(true);
+  const [userId, setUserId]             = useState<string>('');
+  const { isMobile, isTablet }          = useResponsive();
   const [notebookBounce, setNotebookBounce] = useState(false);
 
+  /* ── Get current user & load entries on mount ─────────────────── */
   useEffect(() => {
     setMounted(true);
-    // Notebook bounce on mount
     setTimeout(() => setNotebookBounce(true), 400);
+
+    const init = async () => {
+      try {
+        const user = await account.get();
+        setUserId(user.$id);
+        await loadEntries(user.$id);
+      } catch (err) {
+        console.error('Failed to get user:', err);
+        toast.error('Please log in again.');
+      }
+    };
+    init();
   }, []);
+
+  /* ── Load entries from Appwrite ───────────────────────────────── */
+  const loadEntries = async (uid: string) => {
+    setLoading(true);
+    try {
+      const res = await databases.listDocuments(
+        DATABASE_ID,
+        COLLECTIONS.journal,
+      );
+      const mapped: JournalEntry[] = res.documents.map(doc => ({
+        id:   doc.$id,
+        date: new Date(doc.loggedAt).toLocaleString(),
+        text: doc.content  || '',
+        mood: doc.mood     || '😊',
+        tags: doc.date     ? [doc.date] : [], // storing tags in date field as comma-separated
+      }));
+      setEntries(mapped);
+    } catch (err) {
+      console.error('❌ Load error:', err);
+      toast.error('Failed to load journal entries.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const now = () => {
     const d = new Date(); const h = d.getHours();
     return `Today, ${h}:${String(d.getMinutes()).padStart(2,'0')} ${h>=12?'PM':'AM'}`;
   };
 
-  const addEntry = () => {
-    if (!text.trim()) return;
-    setEntries(p => [{ id:Date.now(), date:now(), text, mood, tags:selectedTags }, ...p]);
+  const addEntry = async () => {
+  if (!text.trim()) return;
+  setSaving(true);
+  try {
+    const user = await account.get();
+
+    const doc = await databases.createDocument(
+      DATABASE_ID,
+      COLLECTIONS.journal,
+      ID.unique(),
+      {
+        userID:   user.$id,
+        title:    mood,
+        content:  text,
+        mood:     mood,
+        date:     selectedTags.join(', '),
+        loggedAt: new Date().toISOString(),
+      }
+    );
+    const newEntry: JournalEntry = {
+      id:   doc.$id,
+      date: now(),
+      text,
+      mood,
+      tags: selectedTags,
+    };
+    setEntries(p => [newEntry, ...p]);
     toast.success('Journal entry saved!');
     setText(''); setMood('😊'); setSelectedTags([]); setShowForm(false);
+  } catch (err) {
+    console.error('❌ Save error:', err);
+    toast.error('Failed to save entry. Check console for details.');
+  } finally {
+    setSaving(false);
+  }
+};
+
+  /* ── Delete entry from Appwrite ───────────────────────────────── */
+  const deleteEntry = async (id: string) => {
+    try {
+      await databases.deleteDocument(DATABASE_ID, COLLECTIONS.journal, id);
+      setEntries(p => p.filter(e => e.id !== id));
+      toast.success('Entry deleted');
+    } catch (err) {
+      console.error('❌ Delete error:', err);
+      toast.error('Failed to delete entry.');
+    }
   };
 
-  const deleteEntry = (id: number) => { setEntries(p => p.filter(e => e.id !== id)); toast.success('Entry deleted'); };
-  const toggleTag   = (tag: string) => setSelectedTags(p => p.includes(tag) ? p.filter(t => t !== tag) : [...p, tag]);
+  const toggleTag = (tag: string) =>
+    setSelectedTags(p => p.includes(tag) ? p.filter(t => t !== tag) : [...p, tag]);
 
   const filtered = filterMood === 'all' ? entries : entries.filter(e => e.mood === filterMood);
 
@@ -99,41 +178,27 @@ export function JournalPage() {
         @keyframes fadeUp   { from{opacity:0;transform:translateY(22px);} to{opacity:1;transform:translateY(0);} }
         @keyframes fadeIn   { from{opacity:0;} to{opacity:1;} }
         @keyframes ringPulse{ 0%{transform:scale(1);opacity:.6;} 100%{transform:scale(1.7);opacity:0;} }
-
-        /* Notebook bounces and settles */
         @keyframes notebookBounce {
           0%  { transform:scale(0.7) rotate(-8deg) translateY(20px); opacity:0; }
           60% { transform:scale(1.08) rotate(3deg) translateY(-6px); opacity:1; }
           80% { transform:scale(0.97) rotate(-1deg); }
           100%{ transform:scale(1) rotate(0deg) translateY(0); opacity:1; }
         }
-        /* Notebook idle float */
         @keyframes notebookFloat {
           0%,100%{ transform:translateY(0) rotate(-2deg); filter:drop-shadow(0 12px 28px rgba(236,72,153,0.4)); }
           50%    { transform:translateY(-10px) rotate(2deg); filter:drop-shadow(0 20px 40px rgba(236,72,153,0.6)); }
         }
-        /* Heart like pop */
-        @keyframes heartPop {
-          0%  { transform:scale(1); }
-          40% { transform:scale(1.4); }
-          70% { transform:scale(0.9); }
-          100%{ transform:scale(1); }
-        }
-        /* Entry slide in */
         @keyframes entrySlide {
           from{ opacity:0; transform:translateX(-14px); }
           to  { opacity:1; transform:translateX(0); }
         }
-        /* Tag pulse on select */
         @keyframes tagPulse {
           0%,100%{ transform:scale(1); } 50%{ transform:scale(1.08); }
         }
-        /* Shimmer on notebook card */
         @keyframes shimmer {
           0%  { transform:translateX(-100%); }
           100%{ transform:translateX(200%); }
         }
-
         .entry-card { transition: all 0.25s ease; }
         .entry-card:hover { transform:translateY(-3px) !important; box-shadow:0 12px 40px rgba(245,158,11,0.15) !important; }
         .del-btn  { opacity:0; transition:opacity 0.2s; }
@@ -142,11 +207,9 @@ export function JournalPage() {
         .tag-chip:hover { transform:translateY(-1px); }
         .filter-btn:hover { background:rgba(245,158,11,0.15) !important; color:rgba(245,158,11,0.9) !important; }
         .new-btn:hover { transform:translateY(-2px) !important; box-shadow:0 8px 24px rgba(245,158,11,0.4) !important; }
-
         .jrnl-input { width:100%; padding:11px 14px; background:rgba(255,255,255,0.07); border:1px solid rgba(245,158,11,0.25); border-radius:10px; color:#e0f0ff; font-size:14px; outline:none; box-sizing:border-box; transition:all .2s; }
         .jrnl-input:focus { border-color:rgba(245,158,11,0.6); background:rgba(255,255,255,0.1); box-shadow:0 0 0 3px rgba(245,158,11,0.1); }
         .jrnl-input::placeholder { color:rgba(180,210,255,0.35); }
-
         ::-webkit-scrollbar { width:5px; }
         ::-webkit-scrollbar-track { background:transparent; }
         ::-webkit-scrollbar-thumb { background:rgba(245,158,11,0.25); border-radius:10px; }
@@ -172,16 +235,13 @@ export function JournalPage() {
                 boxShadow:'0 8px 40px rgba(236,72,153,0.12)',
                 animation: mounted ? 'fadeUp 0.5s ease 0.1s both' : 'none',
               }}>
-                {/* Pink glow bg */}
                 <div style={{ position:'absolute', bottom:'-30px', left:'50%', transform:'translateX(-50%)', width:'200px', height:'120px', background:'rgba(236,72,153,0.08)', filter:'blur(40px)', borderRadius:'50%', pointerEvents:'none' }} />
-                {/* Shimmer */}
                 <div style={{ position:'absolute', inset:0, overflow:'hidden', borderRadius:'20px', pointerEvents:'none' }}>
                   <div style={{ position:'absolute', top:0, left:0, width:'60%', height:'100%', background:'linear-gradient(90deg,transparent,rgba(255,255,255,0.04),transparent)', animation:'shimmer 4s ease infinite' }} />
                 </div>
 
                 <img
-                  src={notebookImg}
-                  alt="Journal"
+                  src={notebookImg} alt="Journal"
                   style={{
                     width:160, height:160, objectFit:'contain',
                     animation: notebookBounce
@@ -195,12 +255,11 @@ export function JournalPage() {
                   <p style={{ color:'rgba(180,210,255,0.5)', fontSize:'12px', margin:0 }}>Your daily health reflections</p>
                 </div>
 
-                {/* Stats row */}
                 <div style={{ display:'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr', gap:'8px', width:'100%' }}>
                   {[
-                    { icon: BookOpen,  val: entries.length,  label:'Entries',  color:'#f472b6' },
-                    { icon: Star,      val: entries.reduce((s,e) => s + e.text.split(' ').length, 0), label:'Words', color:'#38bdf8' },
-                    { icon: Star,      val: 6,               label:'Streak',   color:'#fbbf24' },
+                    { icon: BookOpen, val: entries.length, label:'Entries', color:'#f472b6' },
+                    { icon: Star,     val: entries.reduce((s,e) => s + e.text.split(' ').length, 0), label:'Words', color:'#38bdf8' },
+                    { icon: Star,     val: 6,              label:'Streak',  color:'#fbbf24' },
                   ].map(s => {
                     const Icon = s.icon;
                     return (
@@ -213,7 +272,6 @@ export function JournalPage() {
                   })}
                 </div>
 
-                {/* New Entry button */}
                 <button
                   className="new-btn"
                   onClick={() => setShowForm(!showForm)}
@@ -238,7 +296,6 @@ export function JournalPage() {
                   ))}
                 </div>
               </div>
-
             </div>
 
             {/* ── RIGHT: Entries ────────────────────────────────── */}
@@ -281,7 +338,6 @@ export function JournalPage() {
                     </div>
                   </div>
 
-                  {/* Mood selector with emotion PNGs */}
                   <p style={{ color:'rgba(180,210,255,0.6)', fontSize:'11px', fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', margin:'0 0 10px' }}>Select Mood</p>
                   <div style={{ display:'flex', gap:'10px', marginBottom:'18px', flexWrap:'wrap' }}>
                     {MOOD_OPTIONS.map(e => {
@@ -306,7 +362,6 @@ export function JournalPage() {
                     style={{ marginBottom:'14px', resize:'vertical', fontFamily:'inherit', lineHeight:1.6 }}
                   />
 
-                  {/* Tags */}
                   <p style={{ color:'rgba(180,210,255,0.6)', fontSize:'11px', fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', margin:'0 0 8px' }}>Tags</p>
                   <div style={{ display:'flex', gap:'6px', flexWrap:'wrap', marginBottom:'18px' }}>
                     {TAG_OPTIONS.map(t => (
@@ -318,11 +373,11 @@ export function JournalPage() {
                   </div>
 
                   <div style={{ display:'flex', gap:'10px' }}>
-                    <button onClick={addEntry}
-                      style={{ flex:1, padding:'12px', background:'linear-gradient(135deg,#ec4899,#f59e0b)', border:'none', borderRadius:'12px', color:'#fff', fontWeight:700, fontSize:'14px', cursor:'pointer', boxShadow:'0 4px 18px rgba(236,72,153,0.3)', transition:'all .2s' }}
-                      onMouseEnter={e => { e.currentTarget.style.opacity='0.9'; e.currentTarget.style.transform='translateY(-1px)'; }}
+                    <button onClick={addEntry} disabled={saving}
+                      style={{ flex:1, padding:'12px', background: saving ? 'rgba(236,72,153,0.4)' : 'linear-gradient(135deg,#ec4899,#f59e0b)', border:'none', borderRadius:'12px', color:'#fff', fontWeight:700, fontSize:'14px', cursor: saving ? 'not-allowed' : 'pointer', boxShadow:'0 4px 18px rgba(236,72,153,0.3)', transition:'all .2s' }}
+                      onMouseEnter={e => { if(!saving){ e.currentTarget.style.opacity='0.9'; e.currentTarget.style.transform='translateY(-1px)'; }}}
                       onMouseLeave={e => { e.currentTarget.style.opacity='1'; e.currentTarget.style.transform='translateY(0)'; }}>
-                      Save Entry
+                      {saving ? 'Saving...' : 'Save Entry'}
                     </button>
                     <button onClick={() => setShowForm(false)}
                       style={{ padding:'12px 16px', background:'rgba(255,255,255,0.07)', border:'1px solid rgba(100,180,255,0.2)', borderRadius:'12px', color:'rgba(180,210,255,0.7)', cursor:'pointer', transition:'all .2s', display:'flex', alignItems:'center' }}
@@ -334,8 +389,15 @@ export function JournalPage() {
                 </div>
               )}
 
+              {/* Loading state */}
+              {loading && (
+                <div style={{ ...card, padding:'48px', textAlign:'center' }}>
+                  <p style={{ color:'rgba(180,210,255,0.4)', fontSize:'14px', margin:0 }}>Loading entries...</p>
+                </div>
+              )}
+
               {/* Empty state */}
-              {filtered.length === 0 && (
+              {!loading && filtered.length === 0 && (
                 <div style={{ ...card, padding:'48px', textAlign:'center', animation:'fadeUp 0.4s ease' }}>
                   <img src={notebookImg} alt="Empty" style={{ width:80, height:80, objectFit:'contain', opacity:0.4, marginBottom:'12px' }} />
                   <p style={{ color:'rgba(180,210,255,0.4)', fontSize:'14px', margin:0 }}>No entries yet. Click <strong style={{ color:'#f59e0b' }}>New Entry</strong> to get started!</p>
@@ -343,67 +405,62 @@ export function JournalPage() {
               )}
 
               {/* Entry Cards */}
-              <div style={{ display:'flex', flexDirection:'column', gap:'14px' }}>
-                {filtered.map((entry, i) => {
-                  const emotionImg = EMOTION_IMGS[entry.mood];
-                  const col        = EMOTION_COLORS[entry.mood] || '#f59e0b';
-                  const isExpanded = expandedId === entry.id;
+              {!loading && (
+                <div style={{ display:'flex', flexDirection:'column', gap:'14px' }}>
+                  {filtered.map((entry, i) => {
+                    const emotionImg = EMOTION_IMGS[entry.mood];
+                    const col        = EMOTION_COLORS[entry.mood] || '#f59e0b';
+                    const isExpanded = expandedId === entry.id;
 
-                  return (
-                    <div key={entry.id} className="entry-card"
-                      style={{ ...card, border:`1px solid ${col}22`, padding:'20px', animationDelay:`${i*0.05}s`, animation: mounted ? `entrySlide 0.4s ease ${i*0.05}s both` : 'none', position:'relative', overflow:'hidden', boxShadow:`0 4px 20px rgba(0,0,0,0.25)` }}>
+                    return (
+                      <div key={entry.id} className="entry-card"
+                        style={{ ...card, border:`1px solid ${col}22`, padding:'20px', animationDelay:`${i*0.05}s`, animation: mounted ? `entrySlide 0.4s ease ${i*0.05}s both` : 'none', position:'relative', overflow:'hidden', boxShadow:`0 4px 20px rgba(0,0,0,0.25)` }}>
 
-                      {/* Subtle color glow top-right */}
-                      <div style={{ position:'absolute', top:'-20px', right:'-20px', width:'100px', height:'100px', borderRadius:'50%', background:`${col}10`, filter:'blur(30px)', pointerEvents:'none' }} />
+                        <div style={{ position:'absolute', top:'-20px', right:'-20px', width:'100px', height:'100px', borderRadius:'50%', background:`${col}10`, filter:'blur(30px)', pointerEvents:'none' }} />
 
-                      {/* Entry Header */}
-                      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:'12px' }}>
-                        <div style={{ display:'flex', alignItems:'center', gap:'12px' }}>
-                          {/* Emotion PNG */}
-                          <div style={{ width:52, height:52, borderRadius:'14px', background:`${col}15`, border:`1px solid ${col}30`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, boxShadow:`0 0 12px ${col}25` }}>
-                            <img src={emotionImg} alt={entry.mood} style={{ width:38, height:38, objectFit:'contain', filter:`drop-shadow(0 0 8px ${col}70)` }} />
-                          </div>
-                          <div>
-                            <div style={{ display:'flex', alignItems:'center', gap:'8px' }}>
-                              <span style={{ color:col, fontWeight:700, fontSize:'14px' }}>{MOOD_LABELS[entry.mood]}</span>
-                              <span style={{ color:'rgba(180,210,255,0.25)', fontSize:'12px' }}>·</span>
-                              <span style={{ color:'rgba(180,210,255,0.4)', fontSize:'12px' }}>{entry.date}</span>
+                        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:'12px' }}>
+                          <div style={{ display:'flex', alignItems:'center', gap:'12px' }}>
+                            <div style={{ width:52, height:52, borderRadius:'14px', background:`${col}15`, border:`1px solid ${col}30`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, boxShadow:`0 0 12px ${col}25` }}>
+                              <img src={emotionImg} alt={entry.mood} style={{ width:38, height:38, objectFit:'contain', filter:`drop-shadow(0 0 8px ${col}70)` }} />
                             </div>
-                            {/* Tags inline */}
-                            {entry.tags.length > 0 && (
-                              <div style={{ display:'flex', gap:'4px', flexWrap:'wrap', marginTop:'5px' }}>
-                                {entry.tags.map(t => (
-                                  <span key={t} style={{ padding:'2px 8px', borderRadius:'10px', fontSize:'10px', fontWeight:600, background:`${col}15`, border:`1px solid ${col}30`, color:`${col}cc` }}>{t}</span>
-                                ))}
+                            <div>
+                              <div style={{ display:'flex', alignItems:'center', gap:'8px' }}>
+                                <span style={{ color:col, fontWeight:700, fontSize:'14px' }}>{MOOD_LABELS[entry.mood]}</span>
+                                <span style={{ color:'rgba(180,210,255,0.25)', fontSize:'12px' }}>·</span>
+                                <span style={{ color:'rgba(180,210,255,0.4)', fontSize:'12px' }}>{entry.date}</span>
                               </div>
-                            )}
+                              {entry.tags.length > 0 && (
+                                <div style={{ display:'flex', gap:'4px', flexWrap:'wrap', marginTop:'5px' }}>
+                                  {entry.tags.map(t => (
+                                    <span key={t} style={{ padding:'2px 8px', borderRadius:'10px', fontSize:'10px', fontWeight:600, background:`${col}15`, border:`1px solid ${col}30`, color:`${col}cc` }}>{t}</span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
                           </div>
+
+                          <button className="del-btn" onClick={() => deleteEntry(entry.id)}
+                            style={{ background:'rgba(239,68,68,0.1)', border:'1px solid rgba(239,68,68,0.25)', borderRadius:'8px', padding:'6px', cursor:'pointer', display:'flex', alignItems:'center', color:'#ef4444', flexShrink:0 }}>
+                            <Trash2 size={13} />
+                          </button>
                         </div>
 
-                        {/* Delete button */}
-                        <button className="del-btn" onClick={() => deleteEntry(entry.id)}
-                          style={{ background:'rgba(239,68,68,0.1)', border:'1px solid rgba(239,68,68,0.25)', borderRadius:'8px', padding:'6px', cursor:'pointer', display:'flex', alignItems:'center', color:'#ef4444', flexShrink:0 }}>
-                          <Trash2 size={13} />
-                        </button>
+                        <p onClick={() => setExpandedId(isExpanded ? null : entry.id)}
+                          style={{ margin:'0 0 10px', color:'rgba(220,235,255,0.8)', fontSize:'14px', lineHeight:1.65, cursor:'pointer', userSelect:'none' }}>
+                          {isExpanded ? entry.text : entry.text.length > 150 ? entry.text.slice(0,150)+'…' : entry.text}
+                          {entry.text.length > 150 && (
+                            <span style={{ color:col, fontSize:'12px', fontWeight:600, marginLeft:'6px' }}>
+                              {isExpanded ? 'Show less' : 'Read more'}
+                            </span>
+                          )}
+                        </p>
+
+                        <span style={{ color:'rgba(180,210,255,0.25)', fontSize:'11px' }}>{entry.text.split(' ').length} words</span>
                       </div>
-
-                      {/* Entry text */}
-                      <p onClick={() => setExpandedId(isExpanded ? null : entry.id)}
-                        style={{ margin:'0 0 10px', color:'rgba(220,235,255,0.8)', fontSize:'14px', lineHeight:1.65, cursor:'pointer', userSelect:'none' }}>
-                        {isExpanded ? entry.text : entry.text.length > 150 ? entry.text.slice(0,150)+'…' : entry.text}
-                        {entry.text.length > 150 && (
-                          <span style={{ color:col, fontSize:'12px', fontWeight:600, marginLeft:'6px' }}>
-                            {isExpanded ? 'Show less' : 'Read more'}
-                          </span>
-                        )}
-                      </p>
-
-                      {/* Word count */}
-                      <span style={{ color:'rgba(180,210,255,0.25)', fontSize:'11px' }}>{entry.text.split(' ').length} words</span>
-                    </div>
-                  );
-                })}
-              </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
         </div>

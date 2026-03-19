@@ -8,6 +8,7 @@ import { ChatPanel } from '../components/ChatPanel';
 import { Flame } from 'lucide-react';
 import { toast } from 'sonner';
 import { useResponsive } from '../hooks/useResponsive';
+import { databases, DATABASE_ID, COLLECTIONS, ID, account } from '../../lib/appwrite';
 import '../styles/dashboard.css';
 
 const foodImg   = '/assets/food.png';
@@ -18,39 +19,78 @@ const MemoSidebar = memo(Sidebar);
 
 interface Meal { category: string; foodName: string; calories: number; time: string; }
 
-const initialMeals: Meal[] = [
-  { category: 'Breakfast', foodName: 'Oatmeal with banana & honey',        calories: 320, time: '7:15 AM' },
-  { category: 'Breakfast', foodName: 'Black coffee',                       calories:   5, time: '7:20 AM' },
-  { category: 'Lunch',     foodName: 'Grilled chicken breast with rice',   calories: 520, time: '12:30 PM' },
-  { category: 'Lunch',     foodName: 'Caesar salad',                       calories: 180, time: '12:35 PM' },
-  { category: 'Snack',     foodName: 'Greek yogurt with blueberries',      calories: 150, time: '3:00 PM' },
-  { category: 'Snack',     foodName: 'Protein shake',                      calories: 180, time: '3:05 PM' },
-  { category: 'Dinner',    foodName: 'Salmon fillet with steamed broccoli',calories: 480, time: '7:00 PM' },
-  { category: 'Dinner',    foodName: 'Brown rice',                         calories: 215, time: '7:05 PM' },
-];
-
 export function CaloriesPage() {
-  const [meals, setMeals]           = useState<Meal[]>(initialMeals);
+  const [meals, setMeals]           = useState<Meal[]>([]);
   const [showModal, setShowModal]   = useState(false);
   const [mounted, setMounted]       = useState(false);
+  const [saving, setSaving]         = useState(false);
   const { isMobile, isTablet } = useResponsive();
-  const [newMeal, setNewMeal] = useState({ category: 'Breakfast', foodName: '', calories: 0 });
+  const [newMeal, setNewMeal] = useState({ category: 'Breakfast', foodName: '', calories: 0, note: '' });
 
-  useEffect(() => { setMounted(true); }, []);
+  useEffect(() => {
+    setMounted(true);
+    loadCalorieData();
+  }, []);
+
+  const loadCalorieData = async () => {
+    try {
+      const user = await account.get();
+      const res  = await databases.listDocuments(DATABASE_ID, COLLECTIONS.calories);
+      const today = new Date().toISOString().split('T')[0];
+      const mine = res.documents.filter(d => d.userID === user.$id && d.date === today);
+
+      const mapped: Meal[] = mine.map(d => ({
+        category: d.mealType  || 'Snack',
+        foodName: d.mealName  || '',
+        calories: d.calories  || 0,
+        time:     d.mealTime  || '',
+      }));
+      setMeals(mapped);
+    } catch (err) {
+      console.error('❌ Load calorie error:', err);
+    }
+  };
 
   const totalCals = meals.reduce((s, m) => s + m.calories, 0);
   const goal         = 2200;
   const pct          = Math.min((totalCals / goal) * 100, 100);
 
-  const handleAddMeal = (e: React.FormEvent) => {
+  const handleAddMeal = async (e: React.FormEvent) => {
     e.preventDefault();
-    const now = new Date();
-    const h = now.getHours();
-    const time = `${h}:${String(now.getMinutes()).padStart(2,'0')} ${h>=12?'PM':'AM'}`;
-    setMeals(prev => [...prev, { category: newMeal.category, foodName: newMeal.foodName, calories: newMeal.calories, time }]);
-    toast.success(`${newMeal.foodName} logged!`);
-    setShowModal(false);
-    setNewMeal({ category: 'Breakfast', foodName: '', calories: 0 });
+    setSaving(true);
+    try {
+      const user  = await account.get();
+      const now   = new Date();
+      const h     = now.getHours();
+      const time  = `${h}:${String(now.getMinutes()).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`;
+      const today = now.toISOString().split('T')[0];
+
+      const doc = await databases.createDocument(
+        DATABASE_ID,
+        COLLECTIONS.calories,
+        ID.unique(),
+        {
+          userID:   user.$id,
+          mealName: newMeal.foodName,
+          calories: newMeal.calories,
+          mealType: newMeal.category,
+          note:     newMeal.note || '',
+          mealTime: time,
+          date:     today,
+          loggedAt: now.toISOString(),
+        }
+      );
+      console.log('✅ Meal saved:', doc);
+      toast.success(`${newMeal.foodName} logged!`);
+      setShowModal(false);
+      setNewMeal({ category: 'Breakfast', foodName: '', calories: 0, note: '' });
+      await loadCalorieData();
+    } catch (err) {
+      console.error('❌ Save meal error:', err);
+      toast.error('Failed to save meal. Check console.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const chatResponses = {
@@ -293,7 +333,9 @@ export function CaloriesPage() {
                   </button>
                 </div>
                 <div style={{ display:'flex', flexDirection:'column', gap:'10px' }}>
-                  {meals.map((meal, i) => (
+                  {meals.length === 0 ? (
+                    <p style={{ color:'rgba(180,210,255,0.3)', fontSize:'13px', textAlign:'center', padding:'20px 0' }}>No meals logged today. Add your first meal!</p>
+                  ) : meals.map((meal, i) => (
                     <div key={i} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'14px 16px', background:'rgba(255,255,255,0.04)', border:'1px solid rgba(100,180,255,0.08)', borderRadius:'12px', transition:'all .2s' }}
                       onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.background='rgba(249,115,22,0.07)'; (e.currentTarget as HTMLDivElement).style.borderColor='rgba(249,115,22,0.2)'; }}
                       onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background='rgba(255,255,255,0.04)'; (e.currentTarget as HTMLDivElement).style.borderColor='rgba(100,180,255,0.08)'; }}>
@@ -386,7 +428,7 @@ export function CaloriesPage() {
                 />
               </div>
 
-              <div style={{ marginBottom:'24px' }}>
+              <div style={{ marginBottom:'14px' }}>
                 <label style={{ display:'block', color:'rgba(180,210,255,0.8)', fontSize:'12px', fontWeight:600, letterSpacing:'0.06em', textTransform:'uppercase' as const, marginBottom:'6px' }}>Calories</label>
                 <input
                   type="number"
@@ -399,11 +441,23 @@ export function CaloriesPage() {
                 />
               </div>
 
+              <div style={{ marginBottom:'24px' }}>
+                <label style={{ display:'block', color:'rgba(180,210,255,0.8)', fontSize:'12px', fontWeight:600, letterSpacing:'0.06em', textTransform:'uppercase' as const, marginBottom:'6px' }}>Note <span style={{ color:'rgba(180,210,255,0.3)', fontWeight:400, textTransform:'none' as const }}>(optional)</span></label>
+                <input
+                  type="text"
+                  className="cal-input"
+                  placeholder="e.g. Homemade, restaurant, post-workout..."
+                  value={newMeal.note}
+                  onChange={e => setNewMeal({ ...newMeal, note: e.target.value })}
+                />
+              </div>
+
               <div style={{ display:'flex', gap:'10px' }}>
-                <button type="submit" style={{ flex:1, padding:'13px', background:'linear-gradient(135deg,#f97316,#ea580c)', border:'none', borderRadius:'12px', color:'#fff', fontWeight:700, fontSize:'14px', cursor:'pointer', boxShadow:'0 4px 18px rgba(249,115,22,0.35)', transition:'all .2s' }}
-                  onMouseEnter={e => { e.currentTarget.style.opacity='0.9'; e.currentTarget.style.transform='translateY(-1px)'; }}
+                <button type="submit" disabled={saving}
+                  style={{ flex:1, padding:'13px', background: saving ? 'rgba(249,115,22,0.4)' : 'linear-gradient(135deg,#f97316,#ea580c)', border:'none', borderRadius:'12px', color:'#fff', fontWeight:700, fontSize:'14px', cursor: saving ? 'not-allowed' : 'pointer', boxShadow:'0 4px 18px rgba(249,115,22,0.35)', transition:'all .2s' }}
+                  onMouseEnter={e => { if (!saving) { e.currentTarget.style.opacity='0.9'; e.currentTarget.style.transform='translateY(-1px)'; }}}
                   onMouseLeave={e => { e.currentTarget.style.opacity='1'; e.currentTarget.style.transform='translateY(0)'; }}>
-                  Save Meal
+                  {saving ? 'Saving...' : 'Save Meal'}
                 </button>
                 <button type="button" onClick={() => setShowModal(false)} style={{ flex:1, padding:'13px', background:'rgba(255,255,255,0.07)', border:'1px solid rgba(100,180,255,0.2)', borderRadius:'12px', color:'rgba(180,210,255,0.8)', fontWeight:700, fontSize:'14px', cursor:'pointer', transition:'all .2s' }}
                   onMouseEnter={e => e.currentTarget.style.background='rgba(255,255,255,0.12)'}

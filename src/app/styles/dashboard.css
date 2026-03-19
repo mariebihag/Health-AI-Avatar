@@ -1,3 +1,10 @@
+/* ================================================================
+   dashboard.css  — Health AI
+   Fixed: mobile sidebar slide-in/out, full responsive layout,
+          container widths, header offset on mobile
+   ================================================================ */
+
+/* ── Page shell ──────────────────────────────────────────────── */
 .dashboard-page {
   min-height: 100vh;
   width: 100%;
@@ -5,32 +12,32 @@
   background-size: cover;
   position: relative;
   display: flex;
+  overflow-x: hidden;
 }
 
 .dashboard-page::before {
   content: '';
   position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  inset: 0;
   background: rgba(0, 0, 0, 0.4);
+  pointer-events: none;
 }
 
-/* Sidebar */
+/* ── Sidebar ─────────────────────────────────────────────────── */
 .sidebar {
-  width: 280px;
-  background: rgba(17, 24, 39, 0.85);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border-right: 1px solid rgba(255, 255, 255, 0.1);
+  /* Width is driven by inline style in Sidebar.tsx (collapsed: 68px / expanded: 252px) */
+  background: rgba(6, 15, 40, 0.88);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border-right: 1px solid rgba(100, 180, 255, 0.12);
   position: fixed;
   left: 0;
   top: 0;
   bottom: 0;
-  z-index: 1000;
-  padding: 30px 20px;
+  z-index: 1500;
   overflow-y: auto;
+  overflow-x: hidden;
+  /* transition is set inline in Sidebar.tsx */
 }
 
 .sidebar-logo {
@@ -84,7 +91,7 @@
   box-shadow: 0 0 20px rgba(20, 184, 166, 0.3);
 }
 
-/* Header */
+/* ── Header ──────────────────────────────────────────────────── */
 .header {
   background: rgba(255, 255, 255, 0.10);
   backdrop-filter: blur(20px);
@@ -104,18 +111,31 @@
   object-fit: cover;
 }
 
-/* Main Content */
+/* ── Main content area ───────────────────────────────────────── */
+/*
+  On desktop the sidebar drives its own width via inline style.
+  We mirror that here with a CSS custom property fallback.
+  The Sidebar.tsx sets width: collapsed ? 68px : 252px inline,
+  so we keep two helper classes the layout wrapper can toggle.
+*/
 .main-content {
   flex: 1;
-  margin-left: 252px;
+  margin-left: 252px;       /* matches expanded sidebar default */
   position: relative;
   z-index: 1;
   min-height: 100vh;
   min-width: 0;
   overflow-x: hidden;
+  /* smooth transition when sidebar collapses */
+  transition: margin-left 0.3s cubic-bezier(.4,0,.2,1);
 }
 
-/* Cards */
+/* When sidebar is collapsed (add class="main-content sidebar-collapsed" from layout) */
+.main-content.sidebar-collapsed {
+  margin-left: 68px;
+}
+
+/* ── Glass cards ─────────────────────────────────────────────── */
 .glass-card {
   background: rgba(255, 255, 255, 0.10);
   backdrop-filter: blur(20px);
@@ -152,7 +172,7 @@
   margin-left: 4px;
 }
 
-/* Circular Progress */
+/* ── Circular progress ───────────────────────────────────────── */
 .circular-progress {
   width: 140px;
   height: 140px;
@@ -179,7 +199,7 @@
   justify-content: center;
 }
 
-/* Water Animation */
+/* ── Water animation ─────────────────────────────────────────── */
 .water-container {
   width: 100%;
   height: 120px;
@@ -209,86 +229,41 @@
 }
 
 @keyframes wave {
-  0%, 100% {
-    transform: translateX(-50%) translateY(0);
-  }
-  50% {
-    transform: translateX(-50%) translateY(-5px);
-  }
+  0%, 100% { transform: translateX(-50%) translateY(0); }
+  50%       { transform: translateX(-50%) translateY(-5px); }
 }
 
 .water-glass-overlay {
   position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  inset: 0;
   border: 2px solid rgba(255, 255, 255, 0.2);
   border-radius: 10px;
   pointer-events: none;
 }
 
-/* Toggle Buttons */
+/* ── Toggle buttons ──────────────────────────────────────────── */
 .btn-glass {
   background: rgba(255, 255, 255, 0.1);
   border: 1px solid rgba(255, 255, 255, 0.2);
   color: rgba(255, 255, 255, 0.7);
   transition: all 0.3s ease;
 }
-
 .btn-glass:hover {
   background: rgba(255, 255, 255, 0.15);
   color: white;
 }
-
 .btn-active {
   background: linear-gradient(135deg, #14b8a6 0%, #3b82f6 100%);
   border: none;
   color: white;
   box-shadow: 0 4px 15px rgba(20, 184, 166, 0.3);
 }
-
 .btn-active:hover {
   background: linear-gradient(135deg, #0d9488 0%, #2563eb 100%);
   color: white;
 }
 
-/* Responsive */
-@media (max-width: 991px) {
-  .sidebar {
-    width: 240px;
-  }
-  
-  .main-content {
-    margin-left: 240px;
-  }
-}
-
-@media (max-width: 767px) {
-  .sidebar {
-    transform: translateX(-100%);
-    transition: transform 0.3s ease;
-  }
-  
-  .main-content {
-    margin-left: 0;
-  }
-  
-  .logo-text-small {
-    font-size: 24px;
-  }
-  
-  .header {
-    padding: 15px 0;
-  }
-  
-  .user-avatar {
-    width: 40px;
-    height: 40px;
-  }
-}
-
-/* Chat Panel */
+/* ── Chat panel ──────────────────────────────────────────────── */
 .chat-panel {
   background: rgba(13, 148, 136, 0.85);
   backdrop-filter: blur(20px);
@@ -334,23 +309,12 @@
 }
 
 @keyframes slideIn {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
-.message.user {
-  justify-content: flex-end;
-}
-
-.message.ai {
-  justify-content: flex-start;
-}
+.message.user { justify-content: flex-end; }
+.message.ai   { justify-content: flex-start; }
 
 .message-bubble {
   max-width: 80%;
@@ -360,15 +324,8 @@
   line-height: 1.5;
 }
 
-.message.user .message-bubble {
-  background: rgba(255, 255, 255, 0.95);
-  color: #111827;
-}
-
-.message.ai .message-bubble {
-  background: rgba(255, 255, 255, 0.2);
-  color: white;
-}
+.message.user .message-bubble { background: rgba(255, 255, 255, 0.95); color: #111827; }
+.message.ai  .message-bubble  { background: rgba(255, 255, 255, 0.2);  color: white;   }
 
 .chat-tools {
   display: flex;
@@ -389,7 +346,6 @@
   cursor: pointer;
   white-space: nowrap;
 }
-
 .tool-button:hover {
   background: rgba(255, 255, 255, 0.3);
   transform: translateY(-2px);
@@ -412,12 +368,9 @@
   font-size: 14px;
   outline: none;
   transition: all 0.3s ease;
+  min-width: 0;
 }
-
-.chat-input::placeholder {
-  color: rgba(255, 255, 255, 0.6);
-}
-
+.chat-input::placeholder { color: rgba(255, 255, 255, 0.6); }
 .chat-input:focus {
   background: rgba(255, 255, 255, 0.3);
   border-color: rgba(255, 255, 255, 0.5);
@@ -429,48 +382,24 @@
   color: #0d9488;
   width: 44px;
   height: 44px;
+  min-width: 44px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   transition: all 0.3s ease;
+  flex-shrink: 0;
 }
+.chat-send-btn:hover { background: white; transform: scale(1.05); }
 
-.chat-send-btn:hover {
-  background: white;
-  transform: scale(1.05);
-}
+/* Scrollbar */
+.chat-messages::-webkit-scrollbar       { width: 6px; }
+.chat-messages::-webkit-scrollbar-track { background: rgba(255,255,255,0.1); border-radius: 10px; }
+.chat-messages::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.3); border-radius: 10px; }
+.chat-messages::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.5); }
 
-/* Scrollbar styling for chat */
-.chat-messages::-webkit-scrollbar {
-  width: 6px;
-}
-
-.chat-messages::-webkit-scrollbar-track {
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 10px;
-}
-
-.chat-messages::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.3);
-  border-radius: 10px;
-}
-
-.chat-messages::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.5);
-}
-
-@media (max-width: 1199px) {
-  .chat-panel {
-    height: 600px;
-    position: relative;
-    top: 0;
-    margin-top: 20px;
-  }
-}
-
-/* ── Hamburger button (hidden on desktop) ── */
+/* ── Hamburger toggle (hidden on desktop) ────────────────────── */
 .sidebar-toggle {
   display: none;
   position: fixed;
@@ -496,47 +425,38 @@
   transition: all 0.3s ease;
 }
 
-/* Overlay behind sidebar on mobile */
+/* Overlay */
 .sidebar-overlay {
   display: none;
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.6);
-  z-index: 999;
+  z-index: 1400;
   backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+}
+.sidebar-overlay.open { display: block; }
+
+/* ================================================================
+   RESPONSIVE BREAKPOINTS
+   ================================================================ */
+
+/* ── Large tablet / small laptop (≤ 1199px) ── */
+@media (max-width: 1199px) {
+  .chat-panel {
+    height: 600px;
+    position: relative;
+    top: 0;
+    margin-top: 20px;
+  }
 }
 
 /* ── Tablet (≤ 991px) ── */
 @media (max-width: 991px) {
+  /* Sidebar becomes a drawer */
   .sidebar {
     transform: translateX(-100%) !important;
-    transition: transform 0.3s cubic-bezier(.4,0,.2,1) !important;
-    z-index: 1500 !important;
-    position: fixed !important;
-  }
-  .sidebar.open {
-    transform: translateX(0) !important;
-  }
-  .sidebar-overlay.open {
-    display: block;
-  }
-  .sidebar-toggle {
-    display: flex;
-  }
-  .main-content {
-    margin-left: 0 !important;
-    width: 100% !important;
-  }
-  .dashboard-page {
-    display: block !important;
-  }
-}
-
-/* ── Mobile (≤ 767px) ── */
-@media (max-width: 767px) {
-  .sidebar {
     width: 260px !important;
-    transform: translateX(-100%) !important;
     transition: transform 0.3s cubic-bezier(.4,0,.2,1) !important;
     z-index: 1500 !important;
     position: fixed !important;
@@ -547,30 +467,122 @@
   .sidebar.open {
     transform: translateX(0) !important;
   }
+  .sidebar-overlay.open {
+    display: block;
+  }
+
+  /* Hamburger visible */
+  .sidebar-toggle {
+    display: flex;
+  }
+
+  /* Main content takes full width */
+  .main-content {
+    margin-left: 0 !important;
+    width: 100% !important;
+    transition: none !important;
+  }
+  .main-content.sidebar-collapsed {
+    margin-left: 0 !important;
+  }
+
+  /* Dashboard page becomes block so content stacks */
+  .dashboard-page {
+    display: block !important;
+  }
+
+  /* Header gets left padding so content isn't hidden behind hamburger */
+  .header {
+    padding-left: 60px !important;
+  }
+}
+
+/* ── Mobile (≤ 767px) ── */
+@media (max-width: 767px) {
+  .logo-text-small {
+    font-size: 22px;
+  }
+
+  .header {
+    padding: 12px 0;
+    padding-left: 60px !important;
+  }
+
+  .user-avatar {
+    width: 38px;
+    height: 38px;
+  }
+
   .main-content {
     margin-left: 0 !important;
     width: 100% !important;
     padding: 0 !important;
     overflow-x: hidden !important;
   }
-  .header {
-    padding-left: 60px !important;
-  }
+
   .chat-panel {
     height: 500px;
     margin-top: 16px;
+    border-radius: 12px;
   }
-  .modal-content {
-    width: 95% !important;
-    padding: 20px !important;
-    border-radius: 16px !important;
+
+  /* Reduce inner padding on glass cards for small screens */
+  .glass-card {
+    border-radius: 12px;
   }
-  .dashboard-page {
-    display: block !important;
+
+  /* Metric text scales down */
+  .metric-value       { font-size: 28px; }
+  .metric-value-small { font-size: 20px; }
+  .metric-unit        { font-size: 14px; }
+
+  /* Container/padding safety so nothing bleeds edge-to-edge */
+  .container-fluid,
+  .container {
+    padding-left: 12px !important;
+    padding-right: 12px !important;
+  }
+
+  /* Prevent Bootstrap row negative margins from causing overflow */
+  .row {
+    --bs-gutter-x: 12px;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  /* Chat tools wrap gracefully */
+  .chat-tools {
+    padding: 10px 12px;
+    gap: 6px;
+  }
+
+  .tool-button {
+    font-size: 12px;
+    padding: 6px 10px;
   }
 }
 
-/* Module Specific Styles */
+/* ── Very small phones (≤ 430px) ── */
+@media (max-width: 430px) {
+  .header {
+    padding-left: 56px !important;
+  }
+
+  .chat-input-container {
+    padding: 12px;
+    gap: 6px;
+  }
+
+  /* Stack chips/stat cards in 2 columns instead of 3 */
+  .quick-stats-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+}
+
+/* ================================================================
+   MODULE STYLES
+   ================================================================ */
+
 .module-avatar {
   width: 80px;
   height: 80px;
@@ -596,12 +608,9 @@
   padding: 8px 0;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
+.metric-row:last-child { border-bottom: none; }
 
-.metric-row:last-child {
-  border-bottom: none;
-}
-
-/* Pulse Ring Animation */
+/* ── Pulse ring ── */
 .pulse-ring {
   width: 140px;
   height: 140px;
@@ -616,14 +625,8 @@
 }
 
 @keyframes pulse {
-  0%, 100% {
-    transform: scale(1);
-    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
-  }
-  50% {
-    transform: scale(1.05);
-    box-shadow: 0 0 0 20px rgba(239, 68, 68, 0);
-  }
+  0%, 100% { transform: scale(1);    box-shadow: 0 0 0 0  rgba(239, 68, 68, 0.7); }
+  50%       { transform: scale(1.05); box-shadow: 0 0 0 20px rgba(239, 68, 68, 0); }
 }
 
 .pulse-ring-inner {
@@ -636,7 +639,7 @@
   justify-content: center;
 }
 
-/* Water Ring for Hydration */
+/* ── Water ring ── */
 .water-ring {
   width: 160px;
   height: 160px;
@@ -664,7 +667,7 @@
   flex-direction: column;
 }
 
-/* Reminder Card */
+/* ── Reminder cards ── */
 .reminder-card {
   background: rgba(20, 184, 166, 0.15);
   border: 1px solid rgba(20, 184, 166, 0.3);
@@ -682,17 +685,10 @@
   font-size: 14px;
   line-height: 1.5;
 }
+.reminder-item:last-child { margin-bottom: 0; }
 
-.reminder-item:last-child {
-  margin-bottom: 0;
-}
-
-/* Meal Log List */
-.meal-log-list {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
+/* ── Meal log ── */
+.meal-log-list { display: flex; flex-direction: column; gap: 12px; }
 
 .meal-log-item {
   display: flex;
@@ -704,7 +700,7 @@
   border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-/* Summary Stats */
+/* ── Summary stats ── */
 .summary-stat {
   text-align: center;
   padding: 16px;
@@ -712,29 +708,26 @@
   border-radius: 10px;
 }
 
-/* Modal Styles */
+/* ================================================================
+   MODAL STYLES
+   ================================================================ */
 .modal-overlay {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  inset: 0;
   background: rgba(0, 0, 0, 0.7);
   backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 9999;
   animation: fadeIn 0.3s ease;
+  padding: 16px;   /* so modal never touches screen edge on mobile */
 }
 
 @keyframes fadeIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 
 .modal-content {
@@ -745,7 +738,7 @@
   border-radius: 20px;
   padding: 32px;
   max-width: 500px;
-  width: 90%;
+  width: 100%;
   max-height: 90vh;
   overflow-y: auto;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
@@ -753,13 +746,15 @@
 }
 
 @keyframes slideUp {
-  from {
-    transform: translateY(50px);
-    opacity: 0;
-  }
-  to {
-    transform: translateY(0);
-    opacity: 1;
+  from { transform: translateY(50px); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+
+@media (max-width: 767px) {
+  .modal-content {
+    padding: 20px !important;
+    border-radius: 16px !important;
+    max-height: 85vh;
   }
 }
 
@@ -770,7 +765,6 @@
   border-radius: 5px;
   outline: none;
 }
-
 .form-range::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
@@ -780,7 +774,6 @@
   cursor: pointer;
   border-radius: 50%;
 }
-
 .form-range::-moz-range-thumb {
   width: 20px;
   height: 20px;
@@ -790,9 +783,7 @@
   border: none;
 }
 
-
-
-/* Force buttons inside modals to always be visible */
+/* Force modal buttons to always be visible */
 .modal-content button[type="submit"] {
   background: linear-gradient(135deg, #14b8a6 0%, #3b82f6 100%) !important;
   color: #ffffff !important;
@@ -804,7 +795,6 @@
   width: 100%;
   cursor: pointer;
 }
-
 .modal-content button[type="button"] {
   background: rgba(255, 255, 255, 0.15) !important;
   color: #ffffff !important;
@@ -816,12 +806,5 @@
   width: 100%;
   cursor: pointer;
 }
-
-.modal-content button[type="submit"]:hover {
-  opacity: 0.9;
-  transform: translateY(-1px);
-}
-
-.modal-content button[type="button"]:hover {
-  background: rgba(255, 255, 255, 0.25) !important;
-}
+.modal-content button[type="submit"]:hover { opacity: 0.9; transform: translateY(-1px); }
+.modal-content button[type="button"]:hover { background: rgba(255, 255, 255, 0.25) !important; }
