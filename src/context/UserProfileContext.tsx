@@ -78,7 +78,18 @@ export function UserProfileProvider({ children }: { children: ReactNode }) {
     const loadFromAppwrite = async () => {
       try {
         const user = await account.get();
-        const res  = await databases.listDocuments(
+
+        // Clear localStorage if a different user is logged in
+        const savedUserId = localStorage.getItem('healthai_user_id');
+        if (savedUserId && savedUserId !== user.$id) {
+          localStorage.removeItem('healthai_profile');
+          localStorage.removeItem('healthai_notifications');
+          setProfile(defaultProfile);
+          setNotifications([]);
+        }
+        localStorage.setItem('healthai_user_id', user.$id);
+
+        const res = await databases.listDocuments(
           DATABASE_ID,
           COLLECTIONS.users,
           [Query.equal('userID', user.$id)]
@@ -88,11 +99,11 @@ export function UserProfileProvider({ children }: { children: ReactNode }) {
           const doc = res.documents[0];
           setProfile(prev => ({
             ...prev,
-            name:   doc.name    || prev.name,
-            email:  doc.email   || prev.email,
-            height: doc.heightCm  ?? prev.height,
-            weight: doc.weightKg  ?? prev.weight,
-            bmi:    doc.bmi       ?? prev.bmi,
+            name:       doc.name      || prev.name,
+            email:      doc.email     || prev.email,
+            height:     doc.heightCm  ?? prev.height,
+            weight:     doc.weightKg  ?? prev.weight,
+            bmi:        doc.bmi       ?? prev.bmi,
             bmiEntered: doc.bmi != null,
           }));
         } else {
@@ -134,14 +145,13 @@ export function UserProfileProvider({ children }: { children: ReactNode }) {
         userID:          user.$id,
         name:            updated.name,
         email:           updated.email,
-        bmi:             updated.bmi            ?? 0,
-        detectedEmotion: 'neutral',               // default; update when mood module runs
-        heightCm:        updated.height          ?? 0,
-        weightKg:        updated.weight          ?? 0,
+        bmi:             updated.bmi      ?? 0,
+        detectedEmotion: 'neutral',
+        heightCm:        updated.height   ?? 0,
+        weightKg:        updated.weight   ?? 0,
       };
 
       if (res.documents.length > 0) {
-        // Update existing doc
         await databases.updateDocument(
           DATABASE_ID,
           COLLECTIONS.users,
@@ -150,7 +160,6 @@ export function UserProfileProvider({ children }: { children: ReactNode }) {
         );
         console.log('✅ Profile updated in Appwrite');
       } else {
-        // Create new doc
         await databases.createDocument(
           DATABASE_ID,
           COLLECTIONS.users,
