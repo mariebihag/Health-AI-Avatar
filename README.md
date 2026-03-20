@@ -30,7 +30,6 @@ Medical Avatar is a full-stack AI-powered health monitoring web application. Use
 
 ## Live Demo
 
-🔗 **GitHub:** [https://github.com/mariebihag/medical-avatar.git](https://github.com/mariebihag/medical-avatar.git)
 🌐 **Deployed:** [https://medical-ai-avatar-iow7.onrender.com](https://medical-ai-avatar-iow7.onrender.com)
 
 ---
