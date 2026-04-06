@@ -13,7 +13,6 @@ import { HydrationCard } from '../components/HydrationCard';
 import { ChatPanel } from '../components/ChatPanel';
 import { useNavigate } from 'react-router';
 import '../styles/dashboard.css';
-import { account } from '../../lib/appwrite';
 import { useUserProfile } from '../../context/UserProfileContext';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, Title, Tooltip, Legend, Filler);
@@ -61,13 +60,12 @@ export function Dashboard() {
   const mainRef = useRef<HTMLDivElement>(null);
   const [hour]                    = useState(new Date().getHours());
 
-  // ── Username: profile context wins (updates instantly on name change),
-  //    falls back to Appwrite session on first load ──────────────────
+  // ── Username: sourced exclusively from UserProfileContext,
+  //    which loads from Appwrite on mount and stays in sync ──────────
   const { profile } = useUserProfile();
-  const [userName, setUserName]   = useState('');
-  const [firstName, setFirstName] = useState('');
+  const userName  = profile.name || '';
+  const firstName = userName.split(' ')[0] || 'there';
 
-  // Seed from Appwrite once on mount
   useEffect(() => {
     // Scroll both window and the inner scrollable container to top
     window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
@@ -75,31 +73,7 @@ export function Dashboard() {
     document.body.scrollTop = 0;
     if (mainRef.current) mainRef.current.scrollTop = 0;
     setMounted(true);
-    account.get()
-      .then(user => {
-        const fullName = user.name || user.email || 'User';
-        setUserName(fullName);
-        setFirstName(fullName.split(' ')[0]);
-        // Re-anchor to top after data loads to prevent scroll drift
-        window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
-        document.documentElement.scrollTop = 0;
-        if (mainRef.current) mainRef.current.scrollTop = 0;
-      })
-      .catch(() => {
-        setUserName('User');
-        setFirstName('User');
-        window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
-        if (mainRef.current) mainRef.current.scrollTop = 0;
-      });
   }, []);
-
-  // Sync whenever the user saves a new name in UserProfileModal
-  useEffect(() => {
-    if (profile.name) {
-      setUserName(profile.name);
-      setFirstName(profile.name.split(' ')[0]);
-    }
-  }, [profile.name]);
 
   const greeting = hour < 12 ? 'Good Morning' : hour < 17 ? 'Good Afternoon' : 'Good Evening';
 

@@ -36,8 +36,8 @@ export function getBMICategory(bmi: number): { label: string; color: string } {
 
 /* ── Default state ───────────────────────────────────────────────── */
 const defaultProfile: UserProfile = {
-  name: 'User',
-  email: 'user@healthai.com',
+  name: '',               // ← intentionally blank; Appwrite fills this
+  email: '',              // ← intentionally blank; Appwrite fills this
   avatar: null,
   height: 0,
   weight: 0,
@@ -55,10 +55,31 @@ const UserProfileContext = createContext<UserProfileContextType | null>(null);
 
 /* ── Provider ────────────────────────────────────────────────────── */
 export function UserProfileProvider({ children }: { children: ReactNode }) {
+
+  // ✅ name & email are NEVER seeded from localStorage.
+  // We start blank and always overwrite from Appwrite on mount.
   const [profile, setProfile] = useState<UserProfile>(() => {
     try {
-      const saved = localStorage.getItem('healthai_profile');
-      return saved ? { ...defaultProfile, ...JSON.parse(saved) } : defaultProfile;
+      const saved   = localStorage.getItem('healthai_profile');
+      const parsed  = saved ? JSON.parse(saved) : null;
+
+      // Only restore non-identity fields from localStorage.
+      // name & email are intentionally excluded — Appwrite always wins.
+      return {
+        ...defaultProfile,
+        height:              parsed?.height              ?? defaultProfile.height,
+        weight:              parsed?.weight              ?? defaultProfile.weight,
+        age:                 parsed?.age                 ?? defaultProfile.age,
+        gender:              parsed?.gender              ?? defaultProfile.gender,
+        goal:                parsed?.goal                ?? defaultProfile.goal,
+        bmi:                 parsed?.bmi                 ?? defaultProfile.bmi,
+        bmr:                 parsed?.bmr                 ?? defaultProfile.bmr,
+        recommendedCalories: parsed?.recommendedCalories ?? defaultProfile.recommendedCalories,
+        bmiEntered:          parsed?.bmiEntered          ?? defaultProfile.bmiEntered,
+        // ❌ name and email are deliberately NOT restored from localStorage
+        name:  '',
+        email: '',
+      };
     } catch {
       return defaultProfile;
     }
@@ -73,22 +94,35 @@ export function UserProfileProvider({ children }: { children: ReactNode }) {
     }
   });
 
-  // ── Load profile from Appwrite on mount ──────────────────────────
+  // ── Load name/email from Appwrite on every mount ─────────────────
   useEffect(() => {
     const loadFromAppwrite = async () => {
       try {
         const user = await account.get();
 
-        // Clear localStorage if a different user is logged in
+        // If a different user logged in, wipe localStorage entirely
         const savedUserId = localStorage.getItem('healthai_user_id');
         if (savedUserId && savedUserId !== user.$id) {
           localStorage.removeItem('healthai_profile');
           localStorage.removeItem('healthai_notifications');
-          setProfile(defaultProfile);
           setNotifications([]);
+          // Reset all fields to defaults for the new user
+          setProfile({
+            ...defaultProfile,
+            name:  user.name  || '',
+            email: user.email || '',
+          });
         }
         localStorage.setItem('healthai_user_id', user.$id);
 
+        // ✅ Always set name & email from the live auth session first
+        setProfile(prev => ({
+          ...prev,
+          name:  user.name  || '',
+          email: user.email || '',
+        }));
+
+        // Then enrich with database fields (height, weight, bmi, etc.)
         const res = await databases.listDocuments(
           DATABASE_ID,
           COLLECTIONS.users,
@@ -99,19 +133,13 @@ export function UserProfileProvider({ children }: { children: ReactNode }) {
           const doc = res.documents[0];
           setProfile(prev => ({
             ...prev,
-            name:       doc.name      || prev.name,
-            email:      doc.email     || prev.email,
+            // name & email locked to auth — doc must not override them
+            name:       user.name  || prev.name,
+            email:      user.email || prev.email,
             height:     doc.heightCm  ?? prev.height,
             weight:     doc.weightKg  ?? prev.weight,
             bmi:        doc.bmi       ?? prev.bmi,
             bmiEntered: doc.bmi != null,
-          }));
-        } else {
-          // No doc yet — pre-fill name & email from Appwrite auth
-          setProfile(prev => ({
-            ...prev,
-            name:  user.name  || prev.name,
-            email: user.email || prev.email,
           }));
         }
       } catch (err) {
@@ -145,10 +173,10 @@ export function UserProfileProvider({ children }: { children: ReactNode }) {
         userID:          user.$id,
         name:            updated.name,
         email:           updated.email,
-        bmi:             updated.bmi      ?? 0,
+        bmi:             updated.bmi    ?? 0,
         detectedEmotion: 'neutral',
-        heightCm:        updated.height   ?? 0,
-        weightKg:        updated.weight   ?? 0,
+        heightCm:        updated.height ?? 0,
+        weightKg:        updated.weight ?? 0,
       };
 
       if (res.documents.length > 0) {
@@ -176,7 +204,8 @@ export function UserProfileProvider({ children }: { children: ReactNode }) {
   const updateProfile = (updates: Partial<UserProfile>) => {
     setProfile(prev => {
       const updated = { ...prev, ...updates };
-      saveToAppwrite(updated);
+      // Schedule save outside the setState call to avoid stale-closure issues
+      setTimeout(() => saveToAppwrite(updated), 0);
       return updated;
     });
   };
