@@ -29,10 +29,20 @@ export function Login() {
 
   const handleEmotionComplete = (emotion: string) => {
     sessionStorage.setItem('detectedEmotion', emotion);
+    // Clear any stale data from a previously logged-in user
+    localStorage.removeItem('healthai_profile');
+    localStorage.removeItem('healthai_notifications');
+    localStorage.removeItem('healthai_user_id');
     navigate('/dashboard');
   };
 
-  const handleSkip = () => { navigate('/dashboard'); };
+  const handleSkip = () => {
+    // Clear any stale data from a previously logged-in user
+    localStorage.removeItem('healthai_profile');
+    localStorage.removeItem('healthai_notifications');
+    localStorage.removeItem('healthai_user_id');
+    navigate('/dashboard');
+  };
 
   return (
     <>
