@@ -11,50 +11,17 @@ import { JournalPage } from "./pages/JournalPage.tsx";
 import { MeditationPage } from "./pages/MeditationPage.tsx";
 import { MoodTrackerPage } from "./pages/MoodTrackerPage.tsx";
 
-
 export const router = createBrowserRouter([
-  {
-    path: "/",
-    Component: Login,
-  },
-  {
-    path: "/signup",
-    Component: SignUp,
-  },
-  {
-    path: "/dashboard",
-    Component: Dashboard,
-  },
-  {
-    path: "/heart",
-    Component: HeartPage,
-  },
-  {
-    path: "/sleep",
-    Component: SleepPage,
-  },
-  {
-    path: "/hydration",
-    Component: HydrationPage,
-  },
-  {
-    path: "/calories",
-    Component: CaloriesPage,
-  },
-  {
-    path: "/steps",
-    Component: StepsPage,
-  },
-  {
-    path: "/journal",
-    Component: JournalPage,
-  },
-  {
-    path: "/meditation",
-    Component: MeditationPage,
-  },
-  {
-    path: "/mood",
-    Component: MoodTrackerPage,
-  },
+  { path: "/",          Component: Login },
+  { path: "/signup",    Component: SignUp },
+  { path: "/dashboard", Component: Dashboard },
+  { path: "/heart",     Component: HeartPage },
+  { path: "/sleep",     Component: SleepPage },
+  { path: "/hydration", Component: HydrationPage },
+  { path: "/calories",  Component: CaloriesPage },
+  { path: "/steps",     Component: StepsPage },
+  { path: "/journal",   Component: JournalPage },
+  { path: "/meditation",Component: MeditationPage },
+  { path: "/mood",      Component: MoodTrackerPage },
+  { path: "*",          Component: Login },
 ]);

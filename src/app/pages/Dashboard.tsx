@@ -1,4 +1,4 @@
-import { useState, useEffect, memo } from 'react';
+import { useState, useEffect, useRef, memo } from 'react';
 import { Line } from 'react-chartjs-2';
 import {
   Chart as ChartJS, CategoryScale, LinearScale, PointElement,
@@ -13,6 +13,8 @@ import { HydrationCard } from '../components/HydrationCard';
 import { ChatPanel } from '../components/ChatPanel';
 import { useNavigate } from 'react-router';
 import '../styles/dashboard.css';
+import { account } from '../../lib/appwrite';
+import { useUserProfile } from '../../context/UserProfileContext';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, Title, Tooltip, Legend, Filler);
 
@@ -38,7 +40,6 @@ const QUICK_STATS = [
   { img: clockImg, label: 'Active',     value: '74',    unit: 'min',   color: '#fbbf24', glow: 'rgba(251,191,36,0.4)',  path: '/steps',     anim: 'clockTick'  },
 ];
 
-/* ── Window width hook ───────────────────────────────────────────── */
 function useWindowWidth() {
   const [width, setWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1200);
   useEffect(() => {
@@ -57,13 +58,51 @@ export function Dashboard() {
 
   const [timeRange, setTimeRange] = useState<'daily' | 'weekly' | 'monthly'>('weekly');
   const [mounted, setMounted]     = useState(false);
+  const mainRef = useRef<HTMLDivElement>(null);
   const [hour]                    = useState(new Date().getHours());
 
-  useEffect(() => { setMounted(true); }, []);
+  // ── Username: profile context wins (updates instantly on name change),
+  //    falls back to Appwrite session on first load ──────────────────
+  const { profile } = useUserProfile();
+  const [userName, setUserName]   = useState('');
+  const [firstName, setFirstName] = useState('');
+
+  // Seed from Appwrite once on mount
+  useEffect(() => {
+    // Scroll both window and the inner scrollable container to top
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+    if (mainRef.current) mainRef.current.scrollTop = 0;
+    setMounted(true);
+    account.get()
+      .then(user => {
+        const fullName = user.name || user.email || 'User';
+        setUserName(fullName);
+        setFirstName(fullName.split(' ')[0]);
+        // Re-anchor to top after data loads to prevent scroll drift
+        window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+        document.documentElement.scrollTop = 0;
+        if (mainRef.current) mainRef.current.scrollTop = 0;
+      })
+      .catch(() => {
+        setUserName('User');
+        setFirstName('User');
+        window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+        if (mainRef.current) mainRef.current.scrollTop = 0;
+      });
+  }, []);
+
+  // Sync whenever the user saves a new name in UserProfileModal
+  useEffect(() => {
+    if (profile.name) {
+      setUserName(profile.name);
+      setFirstName(profile.name.split(' ')[0]);
+    }
+  }, [profile.name]);
 
   const greeting = hour < 12 ? 'Good Morning' : hour < 17 ? 'Good Afternoon' : 'Good Evening';
 
-  /* ── Responsive column values ───────────────────────────────── */
   const outerGrid  = isMobile || isTablet ? '1fr' : '1fr 320px';
   const chipCols   = isMobile ? 'repeat(3,1fr)' : 'repeat(6,1fr)';
   const metricCols = isMobile ? '1fr' : '1fr 1fr';
@@ -83,7 +122,6 @@ export function Dashboard() {
     { text: 'You are 2,600 steps from your daily goal. A 20-minute walk will close it!', delay: 20000 },
   ];
 
-  /* ── Chart data ──────────────────────────────────────────────── */
   const weeklyData = {
     labels: ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'],
     datasets: [
@@ -129,7 +167,6 @@ export function Dashboard() {
   return (
     <>
       <style>{`
-        @keyframes fadeUp    { from{opacity:0;transform:translateY(22px);}  to{opacity:1;transform:translateY(0);} }
         @keyframes fadeIn    { from{opacity:0;}  to{opacity:1;} }
         @keyframes ringPulse { 0%{transform:scale(1);opacity:.6;} 100%{transform:scale(1.7);opacity:0;} }
         @keyframes heartPulse{ 0%,100%{transform:scale(1);}        50%{transform:scale(1.1);} }
@@ -148,11 +185,12 @@ export function Dashboard() {
         .range-btn:hover { background:rgba(100,180,255,0.15) !important; color:#e0f0ff !important; }
       `}</style>
 
-      <div className="dashboard-page">
+      <div className="dashboard-page" style={{ overflowX:'hidden' }}>
         <MemoSidebar />
 
-        <div className="main-content" style={{ padding: 0, minWidth: 0 }}>
-          <Header userName="User" />
+        <div ref={mainRef} className="main-content" style={{ padding: 0, minWidth: 0 }}>
+          {/* Pass real userName to Header */}
+          <Header userName={userName} />
 
           <div style={{
             padding: isMobile ? '16px' : '24px 28px',
@@ -165,14 +203,14 @@ export function Dashboard() {
             {/* ── MAIN COLUMN ─────────────────────────────────── */}
             <div style={{ display:'flex', flexDirection:'column', gap:'20px', minWidth:0 }}>
 
-              {/* Welcome Banner */}
+              {/* Welcome Banner — now shows real name */}
               <div style={{
                 ...card,
                 border:'1px solid rgba(100,180,255,0.18)',
                 padding: isMobile ? '18px' : '24px 28px',
                 display:'flex', alignItems:'center', justifyContent:'space-between',
                 position:'relative', overflow:'hidden',
-                animation: mounted ? 'fadeIn 0.5s ease' : 'none',
+                
                 boxShadow:'0 8px 40px rgba(0,60,180,0.15)',
               }}>
                 <div style={{ position:'absolute', inset:0, overflow:'hidden', pointerEvents:'none', borderRadius:'20px' }}>
@@ -181,21 +219,26 @@ export function Dashboard() {
                 <div style={{ position:'absolute', top:'-40px', right:'-40px', width:'200px', height:'200px', borderRadius:'50%', background:'rgba(56,189,248,0.05)', filter:'blur(50px)', pointerEvents:'none' }} />
 
                 <div style={{ position:'relative', zIndex:1 }}>
-                  <p style={{ color:'rgba(180,210,255,0.5)', fontSize:'12px', fontWeight:700, letterSpacing:'0.12em', textTransform:'uppercase', margin:'0 0 4px' }}>{greeting}</p>
+                  {/* Greeting line */}
+                  <p style={{ color:'rgba(180,210,255,0.5)', fontSize:'12px', fontWeight:700, letterSpacing:'0.12em', textTransform:'uppercase', margin:'0 0 4px' }}>
+                    {greeting}
+                  </p>
+                  {/* Real user name */}
                   <h1 style={{ color:'#e0f0ff', fontWeight:900, fontSize: isMobile ? '20px' : '26px', margin:'0 0 6px', letterSpacing:'-0.5px' }}>
-                    Welcome back, <span style={{ background:'linear-gradient(135deg,#7dd3fc,#38bdf8,#818cf8)', WebkitBackgroundClip:'text', WebkitTextFillColor:'transparent', backgroundClip:'text' }}>User</span>
+                    {greeting}, <span style={{ background:'linear-gradient(135deg,#7dd3fc,#38bdf8,#818cf8)', WebkitBackgroundClip:'text', WebkitTextFillColor:'transparent', backgroundClip:'text' }}>
+                      {firstName || 'there'}!
+                    </span>
                   </h1>
                   <p style={{ color:'rgba(180,210,255,0.5)', fontSize:'13px', margin:0 }}>
                     You're doing great — 74% of daily goals completed.
                   </p>
                 </div>
 
-                {/* Icons — hidden on mobile to save space */}
                 {!isMobile && (
                   <div style={{ display:'flex', gap:'16px', position:'relative', zIndex:1, flexShrink:0 }}>
                     <img src={healthImg} alt="Health" style={{ width:56, height:56, objectFit:'contain', animation:'healthSpin 4s ease-in-out infinite', filter:'drop-shadow(0 0 14px rgba(239,68,68,0.5))' }} />
                     <div style={{ position:'relative' }}>
-                      <img src={streakImg} alt="Streak" style={{ width:56, height:56, objectFit:'contain', animation: mounted ? 'streakPop 0.6s cubic-bezier(.4,0,.2,1) 0.5s both' : 'none', filter:'drop-shadow(0 0 12px rgba(251,191,36,0.55))' }} />
+                      <img src={streakImg} alt="Streak" style={{ width:56, height:56, objectFit:'contain', animation: 'streakPop 0.6s cubic-bezier(.4,0,.2,1) forwards', filter:'drop-shadow(0 0 12px rgba(251,191,36,0.55))' }} />
                       <div style={{ position:'absolute', bottom:-2, right:-2, width:20, height:20, borderRadius:'50%', background:'linear-gradient(135deg,#fbbf24,#f59e0b)', border:'2px solid rgba(8,20,50,0.9)', display:'flex', alignItems:'center', justifyContent:'center', boxShadow:'0 0 8px rgba(251,191,36,0.7)' }}>
                         <svg width="10" height="10" viewBox="0 0 24 24" fill="none"><path d="M20 6L9 17l-5-5" stroke="#fff" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
                       </div>
@@ -207,7 +250,7 @@ export function Dashboard() {
               </div>
 
               {/* Quick Stats chips */}
-              <div style={{ display:'grid', gridTemplateColumns: chipCols, gap:'10px', animation: mounted ? 'fadeUp 0.5s ease 0.1s both' : 'none' }}>
+              <div style={{ display:'grid', gridTemplateColumns: chipCols, gap:'10px' }}>
                 {QUICK_STATS.map((s, i) => (
                   <div key={s.label} className="stat-chip"
                     onClick={() => navigate(s.path)}
@@ -231,7 +274,7 @@ export function Dashboard() {
               </div>
 
               {/* Metric Cards */}
-              <div style={{ display:'grid', gridTemplateColumns: metricCols, gap:'16px', animation: mounted ? 'fadeUp 0.5s ease 0.2s both' : 'none' }}>
+              <div style={{ display:'grid', gridTemplateColumns: metricCols, gap:'16px' }}>
                 <HeartRateCard />
                 <StepsCard />
                 <SleepQualityCard />
@@ -239,7 +282,7 @@ export function Dashboard() {
               </div>
 
               {/* Activity Trends Chart */}
-              <div style={{ ...card, padding: isMobile ? '16px' : '24px', animation: mounted ? 'fadeUp 0.5s ease 0.3s both' : 'none' }}>
+              <div style={{ ...card, padding: isMobile ? '16px' : '24px' }}>
                 <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'20px', flexWrap:'wrap', gap:'10px' }}>
                   <div>
                     <p style={{ color:'rgba(180,210,255,0.45)', fontSize:'11px', fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', margin:'0 0 2px' }}>Overview</p>
@@ -260,9 +303,8 @@ export function Dashboard() {
               </div>
 
               {/* Daily Goals + Today Summary */}
-              <div style={{ display:'grid', gridTemplateColumns: bottomCols, gap:'16px', animation: mounted ? 'fadeUp 0.5s ease 0.38s both' : 'none' }}>
+              <div style={{ display:'grid', gridTemplateColumns: bottomCols, gap:'16px' }}>
 
-                {/* Daily Goals */}
                 <div style={{ ...card, padding:'22px' }}>
                   <p style={{ color:'rgba(180,210,255,0.45)', fontSize:'11px', fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', margin:'0 0 16px' }}>Daily Goals</p>
                   {[
@@ -282,14 +324,13 @@ export function Dashboard() {
                           <span style={{ color:g.color, fontSize:'12px', fontWeight:700 }}>{pct.toFixed(0)}%</span>
                         </div>
                         <div style={{ height:'6px', borderRadius:'3px', background:'rgba(255,255,255,0.06)' }}>
-                          <div style={{ height:'100%', borderRadius:'3px', background:g.color, width:`${pct}%`, boxShadow:`0 0 8px ${g.color}60`, transition:'width 1s ease', animation:'barFill 1.2s ease' }} />
+                          <div style={{ height:'100%', borderRadius:'3px', background:g.color, width:`${pct}%`, boxShadow:`0 0 8px ${g.color}60`, transition:'width 1s ease' }} />
                         </div>
                       </div>
                     );
                   })}
                 </div>
 
-                {/* Today's Summary */}
                 <div style={{ ...card, padding:'22px' }}>
                   <p style={{ color:'rgba(180,210,255,0.45)', fontSize:'11px', fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', margin:'0 0 16px' }}>Today's Summary</p>
                   <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px' }}>
@@ -314,28 +355,16 @@ export function Dashboard() {
                 </div>
               </div>
 
-              {/* Chat panel — shown inline on tablet/mobile, in grid on desktop */}
               {(isMobile || isTablet) && (
-                <div style={{ animation: mounted ? 'fadeUp 0.5s ease 0.45s both' : 'none' }}>
-                  <ChatPanel
-                    title="Chat with Health AI"
-                    moduleKey="dashboard"
-                    responses={chatResponses}
-                    autoMessages={autoMessages}
-                  />
+                <div style={{ contain: 'layout style' }}>
+                  <ChatPanel title="Chat with Health AI" moduleKey="dashboard" responses={chatResponses} autoMessages={autoMessages} />
                 </div>
               )}
             </div>
 
-            {/* ── CHAT PANEL (desktop only) ───────────────────── */}
             {!isMobile && !isTablet && (
-              <div style={{ animation: mounted ? 'fadeUp 0.5s ease 0.4s both' : 'none' }}>
-                <ChatPanel
-                  title="Chat with Health AI"
-                  moduleKey="dashboard"
-                  responses={chatResponses}
-                  autoMessages={autoMessages}
-                />
+              <div style={{ contain: 'layout style' }}>
+                <ChatPanel title="Chat with Health AI" moduleKey="dashboard" responses={chatResponses} autoMessages={autoMessages} />
               </div>
             )}
 

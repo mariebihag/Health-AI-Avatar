@@ -115,6 +115,7 @@ export function ChatPanel({
   const [isOpen, setIsOpen]     = useState(true);
   const [shake, setShake]       = useState(false);
   const bottomRef               = useRef<HTMLDivElement>(null);
+  const messagesContainerRef    = useRef<HTMLDivElement>(null);
   const inputRef                = useRef<HTMLInputElement>(null);
   const autoFiredRef            = useRef(false);
 
@@ -135,9 +136,10 @@ export function ChatPanel({
     historyStore[moduleKey] = messages;
   }, [messages, moduleKey]);
 
-  /* ── Auto-scroll ─────────────────────────────────────────────── */
+  /* ── Auto-scroll: scroll only the messages container, never the page */
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const el = messagesContainerRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
   }, [messages, typing]);
 
   /* ── Auto-messages (fire once per module mount) ──────────────── */
@@ -455,6 +457,7 @@ export function ChatPanel({
 
         {/* ── MESSAGES ──────────────────────────────────────────────── */}
         <div
+          ref={messagesContainerRef}
           className="chat-messages"
           style={{
             flex:1, overflowY:'auto',
