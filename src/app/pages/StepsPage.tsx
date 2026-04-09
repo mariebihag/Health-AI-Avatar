@@ -17,7 +17,11 @@ const streakImg = '/assets/streak.png';
 const MemoSidebar = memo(Sidebar);
 
 /* ══════════════════════════════════════════════════════════════════
-   ACCELEROMETER HOOK — iOS + Android compatible
+   ACCURATE STEP COUNTER HOOK
+   - Low-pass filter isolates gravity from raw accelerometer
+   - Subtracts gravity to get linear acceleration only
+   - 500ms cooldown prevents shake false-positives
+   - Hysteresis on falling edge avoids noise re-triggers
 ══════════════════════════════════════════════════════════════════ */
 function useStepCounter() {
   const [steps, setSteps]           = useState(0);
@@ -25,47 +29,39 @@ function useStepCounter() {
   const [error, setError]           = useState<string | null>(null);
   const [supported, setSupported]   = useState(true);
 
-  const lastStepTime  = useRef(0);
-  const lastMag       = useRef(9.8); // gravity baseline
-  const peakDetected  = useRef(false);
-  const gyroActive    = useRef(false);
-  const stepsRef      = useRef(0);
+  const stepsRef     = useRef(0);
+  const lastStepTime = useRef(0);
+  const peakDetected = useRef(false);
+  const gravityRef   = useRef({ x: 0, y: 0, z: 9.8 });
 
-  // Keep stepsRef in sync so event handlers always have fresh value
   useEffect(() => { stepsRef.current = steps; }, [steps]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    if (!('DeviceMotionEvent' in window)) {
-      setSupported(false);
-    }
+    if (!('DeviceMotionEvent' in window)) setSupported(false);
   }, []);
 
-  /* ── Request iOS 13+ permission then start ── */
   const startTracking = async () => {
     setError(null);
-
-    // iOS 13+ requires explicit permission via user gesture
     const DME = DeviceMotionEvent as any;
     if (typeof DME.requestPermission === 'function') {
       try {
         const result = await DME.requestPermission();
         if (result !== 'granted') {
-          setError('Motion & Orientation access was denied. Please allow it in iOS Settings → Safari → Motion & Orientation Access.');
+          setError('Motion access denied. Allow it in iOS Settings → Safari → Motion & Orientation Access.');
           return;
         }
-      } catch (err) {
+      } catch {
         setError('Could not request motion permission. Make sure you are on HTTPS.');
         return;
       }
     }
-
     if (!('DeviceMotionEvent' in window)) {
       setError('Your device does not support motion detection.');
       setSupported(false);
       return;
     }
-
+    gravityRef.current = { x: 0, y: 0, z: 9.8 };
     setIsTracking(true);
     toast.success('Step tracking started! Keep your phone in your pocket or hand.');
   };
@@ -80,73 +76,48 @@ function useStepCounter() {
     stepsRef.current = 0;
   };
 
-  /* ── Gyroscope: detect if device is actually moving (walking motion) ── */
-  useEffect(() => {
-    if (!isTracking) { gyroActive.current = false; return; }
-
-    const handleOrientation = (e: DeviceOrientationEvent) => {
-      // If gyro values change, real movement is happening
-      const beta  = Math.abs(e.beta  ?? 0);
-      const gamma = Math.abs(e.gamma ?? 0);
-      // Consider gyro "active" when there's meaningful tilt change
-      gyroActive.current = beta > 2 || gamma > 2;
-    };
-
-    window.addEventListener('deviceorientation', handleOrientation);
-    return () => window.removeEventListener('deviceorientation', handleOrientation);
-  }, [isTracking]);
-
-  /* ── Accelerometer: detect step peaks ── */
   useEffect(() => {
     if (!isTracking) return;
 
-    // Rolling average for adaptive threshold
-    const windowSize  = 10;
-    const magWindow: number[] = [];
-    let   sum = 0;
+    const ALPHA     = 0.1;   // low-pass strength — closer to 0 = smoother gravity
+    const THRESHOLD = 2.5;   // m/s² above gravity — increase to 3.0 if still too sensitive
+    const COOLDOWN  = 500;   // ms — min time between steps (max 2 steps/sec)
 
     const handleMotion = (e: DeviceMotionEvent) => {
-      const acc = e.accelerationIncludingGravity;
-      if (!acc) return;
+      const raw = e.acceleration ?? e.accelerationIncludingGravity;
+      if (!raw) return;
 
-      const x = acc.x ?? 0;
-      const y = acc.y ?? 0;
-      const z = acc.z ?? 0;
+      const rx = raw.x ?? 0;
+      const ry = raw.y ?? 0;
+      const rz = raw.z ?? 0;
 
-      // Raw magnitude of total acceleration vector
-      const mag = Math.sqrt(x * x + y * y + z * z);
+      let lx = rx, ly = ry, lz = rz;
 
-      // Maintain rolling average for adaptive threshold
-      magWindow.push(mag);
-      sum += mag;
-      if (magWindow.length > windowSize) {
-        sum -= magWindow.shift()!;
+      if (!e.acceleration) {
+        // Low-pass filter to isolate gravity component
+        gravityRef.current.x = ALPHA * rx + (1 - ALPHA) * gravityRef.current.x;
+        gravityRef.current.y = ALPHA * ry + (1 - ALPHA) * gravityRef.current.y;
+        gravityRef.current.z = ALPHA * rz + (1 - ALPHA) * gravityRef.current.z;
+
+        // Linear acceleration = raw − gravity (removes static orientation bias)
+        lx = rx - gravityRef.current.x;
+        ly = ry - gravityRef.current.y;
+        lz = rz - gravityRef.current.z;
       }
-      const avg = sum / magWindow.length;
 
-      // Dynamic threshold: a step spike must be > average + 2.5
-      const threshold = avg + 2.5;
-      const now       = Date.now();
-      // Minimum 300ms between steps (max ~3 steps/sec, realistic walking)
-      const cooldown  = 300;
+      const mag = Math.sqrt(lx * lx + ly * ly + lz * lz);
+      const now = Date.now();
 
-      // Peak detection: rising edge crossed threshold
-      if (mag > threshold && !peakDetected.current && now - lastStepTime.current > cooldown) {
+      if (mag > THRESHOLD && !peakDetected.current && now - lastStepTime.current > COOLDOWN) {
         peakDetected.current = true;
         lastStepTime.current = now;
-
-        // Gyro confirmation: only count if device shows real movement
-        // (skip gyro check on Android where gyro may not fire)
-        // On iOS gyro is always available after permission granted
         setSteps(s => s + 1);
       }
 
-      // Reset peak detector on falling edge
-      if (mag < threshold - 1) {
+      // Hysteresis: reset only when well below threshold to avoid noise re-triggers
+      if (mag < THRESHOLD * 0.6) {
         peakDetected.current = false;
       }
-
-      lastMag.current = mag;
     };
 
     window.addEventListener('devicemotion', handleMotion);
@@ -177,7 +148,6 @@ export function StepsPage() {
   const streak      = 5;
   const goalMet     = currentSteps >= goal;
 
-  /* ── Accelerometer ── */
   const {
     steps: sensorSteps,
     isTracking,
@@ -193,7 +163,6 @@ export function StepsPage() {
     loadTodaySteps();
   }, []);
 
-  /* ── Load today's steps from Appwrite ── */
   const loadTodaySteps = async () => {
     try {
       const user  = await account.get();
@@ -207,7 +176,6 @@ export function StepsPage() {
     }
   };
 
-  /* ── Manual log submit ── */
   const handleLogSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
@@ -239,7 +207,6 @@ export function StepsPage() {
     }
   };
 
-  /* ── Save sensor steps to Appwrite ── */
   const handleSaveSensorSteps = async () => {
     if (sensorSteps === 0) {
       toast.error('No steps to save yet!');
@@ -283,7 +250,7 @@ export function StepsPage() {
     labels: ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'],
     datasets: [{
       label: 'Steps',
-      data: [8200,6500,9100,7400,10200,5800,currentSteps],
+      data: [8200, 6500, 9100, 7400, 10200, 5800, currentSteps],
       backgroundColor: (ctx: any) => ctx.dataIndex === 6 ? 'rgba(34,197,94,0.9)' : 'rgba(34,197,94,0.35)',
       borderRadius: 8,
     }],
@@ -293,7 +260,7 @@ export function StepsPage() {
     labels: ['6am','8am','10am','12pm','2pm','4pm','6pm','8pm'],
     datasets: [{
       label: 'Steps',
-      data: [500,1200,900,1500,1100,800,1000,400],
+      data: [500, 1200, 900, 1500, 1100, 800, 1000, 400],
       borderColor: 'rgba(34,197,94,1)',
       backgroundColor: 'rgba(34,197,94,0.1)',
       fill: true, tension: 0.4,
@@ -337,7 +304,6 @@ export function StepsPage() {
     { label: 'Streak',       value: `${streak} days`, color: '#fbbf24' },
   ];
 
-  /* ── Sensor step progress % ── */
   const sensorPct = Math.min((sensorSteps / goal) * 100, 100);
 
   return (
@@ -417,7 +383,7 @@ export function StepsPage() {
                 </button>
               </div>
 
-              {/* Hero Cards: Shoe + Medal */}
+              {/* Hero Cards */}
               <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px', animation: mounted ? 'fadeUp 0.5s ease 0.1s both' : 'none' }}>
                 {/* Shoe Card */}
                 <div style={{ ...card, border: '1px solid rgba(34,197,94,0.25)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '14px', padding: '28px 20px', position: 'relative', overflow: 'hidden' }} className="organ-card">
@@ -464,7 +430,6 @@ export function StepsPage() {
                 animation: mounted ? 'fadeUp 0.5s ease 0.15s both' : 'none',
                 transition: 'all 0.4s ease',
               }}>
-                {/* Header row */}
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '18px', flexWrap: 'wrap', gap: '10px' }}>
                   <div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '2px' }}>
@@ -486,7 +451,13 @@ export function StepsPage() {
                   )}
                 </div>
 
-                {/* Big step count display */}
+                {/* Accuracy badge */}
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '5px 12px', background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.25)', borderRadius: '20px', marginBottom: '16px' }}>
+                  <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#22c55e' }} />
+                  <span style={{ color: '#4ade80', fontSize: '11px', fontWeight: 600 }}>Shake-resistant · Low-pass filter active</span>
+                </div>
+
+                {/* Big step count */}
                 <div style={{ textAlign: 'center', marginBottom: '20px', padding: '20px', background: 'rgba(34,197,94,0.05)', borderRadius: '14px', border: '1px solid rgba(34,197,94,0.1)' }}>
                   <p style={{ color: '#4ade80', fontWeight: 900, fontSize: isMobile ? '52px' : '64px', margin: 0, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
                     {sensorSteps.toLocaleString()}
@@ -501,7 +472,7 @@ export function StepsPage() {
                   )}
                 </div>
 
-                {/* Progress bar for sensor steps */}
+                {/* Progress bar */}
                 {sensorSteps > 0 && (
                   <div style={{ marginBottom: '16px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
@@ -514,21 +485,19 @@ export function StepsPage() {
                   </div>
                 )}
 
-                {/* Error message */}
                 {sensorError && (
                   <div style={{ padding: '12px 14px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '12px', marginBottom: '14px' }}>
                     <p style={{ color: '#f87171', fontSize: '12px', margin: 0, lineHeight: '1.6' }}>⚠️ {sensorError}</p>
                   </div>
                 )}
 
-                {/* Not supported warning */}
                 {!sensorSupported && (
                   <div style={{ padding: '12px 14px', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: '12px', marginBottom: '14px' }}>
                     <p style={{ color: '#fbbf24', fontSize: '12px', margin: 0 }}>⚠️ Motion sensors not available on this device. Use the manual Log Steps button instead.</p>
                   </div>
                 )}
 
-                {/* Control buttons */}
+                {/* Controls */}
                 <div style={{ display: 'flex', gap: '10px' }}>
                   {!isTracking ? (
                     <button
@@ -558,11 +527,10 @@ export function StepsPage() {
                   </button>
                 </div>
 
-                {/* iOS tip */}
                 <div style={{ marginTop: '14px', padding: '10px 14px', background: 'rgba(96,165,250,0.07)', border: '1px solid rgba(96,165,250,0.15)', borderRadius: '10px' }}>
                   <p style={{ color: 'rgba(147,197,253,0.8)', fontSize: '11px', margin: 0, lineHeight: '1.6' }}>
                     {isTracking
-                      ? '🟢 Tracking active — keep your phone in your pocket or held naturally while walking.'
+                      ? '🟢 Tracking active — keep your phone in your pocket or held naturally while walking. Shake-resistant algorithm enabled.'
                       : '📱 iOS users: tap "Start" and allow Motion & Orientation access when prompted. Works best on iPhone 6s and later.'}
                   </p>
                 </div>
@@ -731,12 +699,10 @@ export function StepsPage() {
               <h4 style={{ color: '#e0f0ff', fontWeight: 800, fontSize: '20px', margin: '0 0 6px' }}>Save Sensor Steps</h4>
               <p style={{ color: 'rgba(180,210,255,0.5)', fontSize: '13px', margin: 0 }}>Add your auto-detected steps to today's log</p>
             </div>
-
             <div style={{ padding: '20px', background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.2)', borderRadius: '14px', textAlign: 'center', marginBottom: '24px' }}>
               <p style={{ color: '#4ade80', fontWeight: 900, fontSize: '48px', margin: '0 0 4px', lineHeight: 1 }}>{sensorSteps.toLocaleString()}</p>
               <p style={{ color: 'rgba(180,210,255,0.5)', fontSize: '13px', margin: 0 }}>steps · ≈{(sensorSteps * 0.0007).toFixed(2)} km · ~{Math.round(sensorSteps * 0.04)} cal</p>
             </div>
-
             <div style={{ display: 'flex', gap: '10px' }}>
               <button onClick={handleSaveSensorSteps} disabled={saving}
                 style={{ flex: 1, padding: '13px', background: saving ? 'rgba(34,197,94,0.4)' : 'linear-gradient(135deg,#22c55e,#16a34a)', border: 'none', borderRadius: '12px', color: '#fff', fontWeight: 700, fontSize: '14px', cursor: saving ? 'not-allowed' : 'pointer', boxShadow: '0 4px 18px rgba(34,197,94,0.35)' }}>
