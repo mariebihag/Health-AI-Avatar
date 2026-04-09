@@ -17,18 +17,16 @@ const streakImg = '/assets/streak.png';
 const MemoSidebar = memo(Sidebar);
 
 /* ══════════════════════════════════════════════════════════════════
-   ACCURATE STEP COUNTER — Accelerometer + Gyroscope Fusion
+   ACCURATE STEP COUNTER — Accelerometer + Gyroscope Fusion (v2)
 
-   HOW IT WORKS:
-   1. Low-pass filter on accelerometer isolates gravity component
-   2. Subtract gravity → get true linear acceleration magnitude
-   3. Gyroscope measures rate of rotation (deg/sec)
-   4. A REAL STEP requires BOTH signals:
-      - Accel spike > ACCEL_THRESHOLD (real body movement)
-      - Gyro rotation > GYRO_THRESHOLD (body rotation = walking gait)
-   5. A SHAKE: high accel ✅  but gyro stays near-zero ❌ → REJECTED
-   6. A STEP:  high accel ✅  and gyro rotates           ✅ → COUNTED
-   7. 500 ms cooldown = max 2 steps/sec (realistic walking pace)
+   FIXES vs v1:
+   - BUG FIX: gyroConfirms no longer skips check when gyro is stale.
+     Old code: !gyroFresh || gyroRate > threshold  ← stale = skip check
+     New code: gyroFresh && gyroRate > threshold   ← stale = raise bar instead
+   - Dynamic threshold: must exceed 1.4× rolling average (blocks vibration)
+   - Shake burst detection: 4+ spikes within 600 ms → rejected
+   - Rhythm check: step rate > 2.2/sec → rejected (not humanly possible)
+   - Stricter constants: ACCEL 2.8→3.2, GYRO 15→18, COOLDOWN 500→550 ms
 ══════════════════════════════════════════════════════════════════ */
 function useStepCounter() {
   const [steps, setSteps]                 = useState(0);
@@ -37,15 +35,20 @@ function useStepCounter() {
   const [supported, setSupported]         = useState(true);
   const [gyroAvailable, setGyroAvailable] = useState(false);
 
-  const stepsRef     = useRef(0);
-  const lastStepTime = useRef(0);
-  const peakDetected = useRef(false);
-  const gravityRef   = useRef({ x: 0, y: 0, z: 9.8 });
+  const stepsRef      = useRef(0);
+  const lastStepTime  = useRef(0);
+  const peakDetected  = useRef(false);
+  const gravityRef    = useRef({ x: 0, y: 0, z: 9.8 });
+  const gyroRateRef   = useRef(0);
+  const prevOrient    = useRef({ alpha: 0, beta: 0, gamma: 0 });
+  const prevOrientTs  = useRef(0);
 
-  // Stores gyroscope RATE OF CHANGE (deg/sec), updated by orientation listener
-  const gyroRateRef  = useRef(0);
-  const prevOrient   = useRef({ alpha: 0, beta: 0, gamma: 0 });
-  const prevOrientTs = useRef(0);
+  // Rolling window of recent accel magnitudes for dynamic threshold
+  const accelHistory  = useRef<number[]>([]);
+  // Timestamps of recent spikes for shake burst detection
+  const recentSpikes  = useRef<number[]>([]);
+  // Timestamps of last few confirmed steps for rhythm check
+  const lastPeaks     = useRef<number[]>([]);
 
   useEffect(() => { stepsRef.current = steps; }, [steps]);
 
@@ -57,8 +60,6 @@ function useStepCounter() {
 
   const startTracking = async () => {
     setError(null);
-
-    // iOS 13+ — request both motion and orientation permissions
     const DME = DeviceMotionEvent as any;
     const DOE = DeviceOrientationEvent as any;
 
@@ -85,10 +86,13 @@ function useStepCounter() {
       return;
     }
 
-    // Reset state on each new session
+    // Reset all state on each new session
     gravityRef.current   = { x: 0, y: 0, z: 9.8 };
     gyroRateRef.current  = 0;
     prevOrientTs.current = 0;
+    accelHistory.current = [];
+    recentSpikes.current = [];
+    lastPeaks.current    = [];
     setIsTracking(true);
     toast.success('Step tracking started! Keep your phone in your pocket or hand.');
   };
@@ -112,7 +116,6 @@ function useStepCounter() {
         const da = Math.abs((e.alpha ?? 0) - prevOrient.current.alpha);
         const db = Math.abs((e.beta  ?? 0) - prevOrient.current.beta);
         const dg = Math.abs((e.gamma ?? 0) - prevOrient.current.gamma);
-        // Total rotation rate magnitude (deg/sec)
         gyroRateRef.current = Math.sqrt(da * da + db * db + dg * dg) / (elapsed / 1000);
       }
 
@@ -124,15 +127,19 @@ function useStepCounter() {
     return () => window.removeEventListener('deviceorientation', handleOrientation);
   }, [isTracking]);
 
-  /* ── Accelerometer + Gyroscope fusion ── */
+  /* ── Accelerometer + Gyroscope fusion (v2 — shake-proof) ── */
   useEffect(() => {
     if (!isTracking) return;
 
-    const ALPHA           = 0.1;   // low-pass filter coefficient
-    const ACCEL_THRESHOLD = 2.8;   // m/s² — accel spike needed for a candidate step
-    const GYRO_THRESHOLD  = 15;    // deg/sec — rotation needed to confirm walking gait
-    const GYRO_STALE_MS   = 400;   // ms — ignore gyro if reading is older than this
-    const COOLDOWN        = 500;   // ms — minimum gap between two steps
+    const ALPHA            = 0.1;   // low-pass filter for gravity removal
+    const ACCEL_THRESHOLD  = 3.2;   // m/s² — raised from 2.8, less sensitive to small shakes
+    const GYRO_THRESHOLD   = 18;    // deg/sec — raised from 15, stricter rotation requirement
+    const GYRO_STALE_MS    = 300;   // ms — reduced from 400, gyro must be fresher to count
+    const COOLDOWN         = 550;   // ms — slightly longer, max ~1.8 steps/sec
+    const HISTORY_SIZE     = 6;     // rolling window for dynamic threshold
+    const MAX_STEP_RATE    = 2.2;   // max realistic steps/sec (fast running)
+    const SHAKE_BURST_MS   = 600;   // window to detect rapid shake bursts
+    const SHAKE_BURST_COUNT = 4;    // number of spikes within window = shake
 
     const handleMotion = (e: DeviceMotionEvent) => {
       const raw = e.acceleration ?? e.accelerationIncludingGravity;
@@ -144,7 +151,7 @@ function useStepCounter() {
 
       let lx = rx, ly = ry, lz = rz;
 
-      // If gravity-included, remove it via low-pass filter
+      // Remove gravity via low-pass filter if e.acceleration is unavailable
       if (!e.acceleration) {
         gravityRef.current.x = ALPHA * rx + (1 - ALPHA) * gravityRef.current.x;
         gravityRef.current.y = ALPHA * ry + (1 - ALPHA) * gravityRef.current.y;
@@ -154,35 +161,71 @@ function useStepCounter() {
         lz = rz - gravityRef.current.z;
       }
 
-      const accelMag  = Math.sqrt(lx * lx + ly * ly + lz * lz);
-      const now       = Date.now();
-      const gyroFresh = (now - prevOrientTs.current) < GYRO_STALE_MS;
+      const accelMag = Math.sqrt(lx * lx + ly * ly + lz * lz);
+      const now      = Date.now();
 
-      /*
-        FUSION DECISION:
-        ┌─────────────────────────────────────────────────────┐
-        │  accelMag > threshold  AND  (gyro confirms OR stale)│
-        │  gyro confirms = gyroRateRef > GYRO_THRESHOLD       │
-        │  stale = no recent gyro data (device may lack gyro) │
-        └─────────────────────────────────────────────────────┘
-        Shake → accel spike YES, gyro rotation NO → blocked
-        Step  → accel spike YES, gyro rotation YES → counted
-      */
-      const gyroConfirms = !gyroFresh || gyroRateRef.current > GYRO_THRESHOLD;
+      // ── 1. Dynamic threshold: must exceed 1.4× recent rolling average ──
+      accelHistory.current.push(accelMag);
+      if (accelHistory.current.length > HISTORY_SIZE) accelHistory.current.shift();
+      const avg = accelHistory.current.reduce((a, b) => a + b, 0) / accelHistory.current.length;
+      const dynamicThreshold = Math.max(ACCEL_THRESHOLD, avg * 1.4);
 
+      // ── 2. Gyroscope check — FIXED ──
+      //    OLD (buggy): !gyroFresh || gyroRate > threshold
+      //      → when gyro is stale, !gyroFresh = true → check skipped entirely
+      //      → any shake on a slow-gyro device gets counted as a step
+      //    NEW (fixed): gyroFresh && gyroRate > threshold
+      //      → when gyro is stale, gyroConfirms = false
+      //      → we raise the accel bar by 1.8× instead of skipping
+      const gyroFresh    = (now - prevOrientTs.current) < GYRO_STALE_MS;
+      const gyroConfirms = gyroFresh && gyroRateRef.current > GYRO_THRESHOLD;
+
+      // No gyro confirmation? Require much stronger movement to compensate
+      const effectiveThreshold = gyroConfirms
+        ? dynamicThreshold          // gyro confirms → normal threshold
+        : dynamicThreshold * 1.8;   // no gyro → need much stronger movement
+
+      // ── 3. Shake burst detection ──
+      //    A real shake produces 4+ rapid spikes within SHAKE_BURST_MS
+      if (accelMag > ACCEL_THRESHOLD) {
+        recentSpikes.current.push(now);
+        while (recentSpikes.current.length > 0 && now - recentSpikes.current[0] > SHAKE_BURST_MS) {
+          recentSpikes.current.shift();
+        }
+      }
+      const isShakeBurst = recentSpikes.current.length >= SHAKE_BURST_COUNT;
+
+      // ── 4. Rhythm check ──
+      //    Real walking has a consistent cadence; shaking is erratic or too fast
+      const recentStepTimes = lastPeaks.current.filter(t => now - t < 3000);
+      let rhythmOk = true;
+      if (recentStepTimes.length >= 2) {
+        const intervals: number[] = [];
+        for (let i = 1; i < recentStepTimes.length; i++) {
+          intervals.push(recentStepTimes[i] - recentStepTimes[i - 1]);
+        }
+        const avgInterval = intervals.reduce((a, b) => a + b, 0) / intervals.length;
+        const stepRate    = 1000 / avgInterval;
+        if (stepRate > MAX_STEP_RATE) rhythmOk = false;
+      }
+
+      // ── 5. Final step decision ──
       if (
-        accelMag > ACCEL_THRESHOLD &&
-        gyroConfirms &&
+        accelMag > effectiveThreshold &&
+        !isShakeBurst &&
+        rhythmOk &&
         !peakDetected.current &&
         now - lastStepTime.current > COOLDOWN
       ) {
         peakDetected.current = true;
         lastStepTime.current = now;
+        lastPeaks.current.push(now);
+        if (lastPeaks.current.length > 4) lastPeaks.current.shift();
         setSteps(s => s + 1);
       }
 
-      // Hysteresis: don't reset peak until well below threshold
-      if (accelMag < ACCEL_THRESHOLD * 0.6) {
+      // Hysteresis: reset peak flag only when signal drops well below threshold
+      if (accelMag < effectiveThreshold * 0.55) {
         peakDetected.current = false;
       }
     };
@@ -427,7 +470,7 @@ export function StepsPage() {
                 {/* Fusion explanation */}
                 <div style={{ padding: '12px 14px', background: 'rgba(167,139,250,0.07)', border: '1px solid rgba(167,139,250,0.15)', borderRadius: '12px', marginBottom: '16px' }}>
                   <p style={{ color: 'rgba(196,181,253,0.9)', fontSize: '11px', margin: 0, lineHeight: '1.7' }}>
-                    <strong style={{ color: '#c4b5fd' }}>Sensor fusion:</strong> Accelerometer detects movement spikes → Gyroscope confirms walking rotation → Both must agree to count a step. Shaking your phone moves the accelerometer but not the gyroscope, so shakes are ignored.
+                    <strong style={{ color: '#c4b5fd' }}>Sensor fusion v2:</strong> Accelerometer detects movement → Gyroscope confirms walking gait → Dynamic threshold + shake burst detection + rhythm check all run together to block false steps.
                   </p>
                 </div>
 
