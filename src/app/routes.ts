@@ -10,6 +10,7 @@ import { StepsPage } from "./pages/StepsPage";
 import { JournalPage } from "./pages/JournalPage.tsx";
 import { MeditationPage } from "./pages/MeditationPage.tsx";
 import { MoodTrackerPage } from "./pages/MoodTrackerPage.tsx";
+import { FemaleHealthPage } from "./pages/FemaleHealthPage.tsx";
 
 export const router = createBrowserRouter([
   { path: "/",          Component: Login },
@@ -23,5 +24,6 @@ export const router = createBrowserRouter([
   { path: "/journal",   Component: JournalPage },
   { path: "/meditation",Component: MeditationPage },
   { path: "/mood",      Component: MoodTrackerPage },
+   { path: "/female-health", Component: FemaleHealthPage }, 
   { path: "*",          Component: Login },
 ]);

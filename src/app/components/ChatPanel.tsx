@@ -67,6 +67,13 @@ const MODULE_CONFIG: Record<string, {
     badge: '🏥',
     intro: 'Hi! I\'m your Health AI. Ask me about any of your health metrics — steps, sleep, heart rate, and more.',
   },
+  female: {
+    accent: '#f43f5e',
+    glow: 'rgba(244,63,94,0.35)',
+    label: 'FEMALE HEALTH AI',
+    badge: '♀',
+    intro: 'Hello! I\'m your Female Health AI. Ask me about your cycle, period symptoms, pregnancy milestones, ovulation, nutrition, or hormonal health. Try: "Is my period late?", "What phase am I in?", or "How much iron do I need?"',
+  },
 };
 
 /* ── Avatar map: moduleKey → image path ──────────────────────────── */
@@ -77,6 +84,7 @@ const AVATAR_MAP: Record<string, string> = {
   sleep:      '/assets/sleepavatarpng.png',
   calories:   '/assets/caloriesavatarpng.png',
   dashboard:  '/assets/Medical_Avatar_Logo.png',
+  female:     '/assets/femaleavatarpng.png',
 };
 
 /* ── Timestamp helper ───────────────────────────────────────────── */

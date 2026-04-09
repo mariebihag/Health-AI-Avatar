@@ -6,7 +6,6 @@ import { toast } from 'sonner';
 import { useResponsive } from '../hooks/useResponsive';
 import { databases, DATABASE_ID, COLLECTIONS, ID } from '../../lib/appwrite';
 import { account } from '../../lib/appwrite';
-import '../styles/dashboard.css';
 
 /* ── Assets ─────────────────────────────────────────────────────── */
 const notebookImg = '/assets/notebook.png';

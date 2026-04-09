@@ -15,6 +15,27 @@ function useWindowWidth() {
   return width;
 }
 
+export function VenusIcon({ size = 17, color = 'currentColor' }: { size?: number; color?: string }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={color}
+      strokeWidth={2.2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <circle cx="12" cy="9" r="6" />
+      <line x1="12" y1="15" x2="12" y2="21" />
+      <line x1="9" y1="18" x2="15" y2="18" />
+    </svg>
+  );
+}
+
+const FemaleIcon = (props: { size?: number; color?: string }) => <VenusIcon {...props} />;
+
 export function Sidebar() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -37,12 +58,13 @@ export function Sidebar() {
   }, []);
 
   const navItems = [
-    { icon: Activity,   label: 'Activity',    path: '/dashboard',  color: '#00e5cc' },
-    { icon: Heart,      label: 'Heart',        path: '/heart',      color: '#ef4444' },
-    { icon: Moon,       label: 'Sleep',        path: '/sleep',      color: '#8b5cf6' },
-    { icon: Flame,      label: 'Calories',     path: '/calories',   color: '#f59e0b' },
-    { icon: Droplet,    label: 'Hydration',    path: '/hydration',  color: '#3b82f6' },
-    { icon: Footprints, label: 'Steps',        path: '/steps',      color: '#22c55e' },
+    { icon: Activity,    label: 'Activity',       path: '/dashboard',     color: '#00e5cc' },
+    { icon: Heart,       label: 'Heart',           path: '/heart',         color: '#ef4444' },
+    { icon: Moon,        label: 'Sleep',           path: '/sleep',         color: '#8b5cf6' },
+    { icon: Flame,       label: 'Calories',        path: '/calories',      color: '#f59e0b' },
+    { icon: Droplet,     label: 'Hydration',       path: '/hydration',     color: '#3b82f6' },
+    { icon: Footprints,  label: 'Steps',           path: '/steps',         color: '#22c55e' },
+    { icon: FemaleIcon,  label: 'Female Health',   path: '/female-health', color: '#f43f5e' },
   ];
 
   const wellnessItems = [

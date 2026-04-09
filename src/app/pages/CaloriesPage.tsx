@@ -9,7 +9,6 @@ import { Flame } from 'lucide-react';
 import { toast } from 'sonner';
 import { useResponsive } from '../hooks/useResponsive';
 import { databases, DATABASE_ID, COLLECTIONS, ID, account } from '../../lib/appwrite';
-import '../styles/dashboard.css';
 
 const foodImg   = '/assets/food.png';
 const scaleImg  = '/assets/foodscale.png';
@@ -93,9 +92,97 @@ export function CaloriesPage() {
     }
   };
 
-  const chatResponses = {
-    calories: `You've consumed ${totalCals} kcal of your ${goal} kcal goal today.`,
-    meal:     `You've logged ${meals.length} meals today totaling ${totalCals} kcal.`,
+  const remaining   = goal - totalCals;
+  const overBy      = totalCals - goal;
+  const isOver      = totalCals > goal;
+  const mealAvg     = meals.length > 0 ? Math.round(totalCals / meals.length) : 0;
+  const lastMeal    = meals.length > 0 ? meals[meals.length - 1] : null;
+
+  const chatResponses: Record<string, string> = {
+    // ── Daily Intake & Calories ───────────────────────────────────────────────
+    calories:   `You've consumed ${totalCals} kcal out of your ${goal} kcal daily goal — that's ${Math.round(pct)}% of your target. ${isOver ? `You're ${overBy} kcal over budget. Consider lighter meals for the rest of the day.` : `You have ${remaining} kcal remaining. Spread them wisely across your next meals.`}`,
+    intake:     `Today's calorie intake: ${totalCals} kcal logged across ${meals.length} meal${meals.length !== 1 ? 's' : ''}. Your daily goal is ${goal} kcal. ${isOver ? `You've exceeded it by ${overBy} kcal.` : `You still have ${remaining} kcal left.`}`,
+    total:      `Your total calorie count today is ${totalCals} kcal. The daily goal is set at ${goal} kcal. ${isOver ? `Try to offset the surplus with a light dinner or an extra walk.` : `You're on track — ${remaining} kcal to go.`}`,
+    today:      `Today's nutrition snapshot: ${totalCals} kcal consumed · ${meals.length} meal${meals.length !== 1 ? 's' : ''} logged · ${remaining > 0 ? `${remaining} kcal remaining` : `${overBy} kcal over goal`}. ${meals.length === 0 ? 'Start by logging your first meal above!' : 'Keep logging to maintain accurate data.'}`,
+    eaten:      `You've eaten ${totalCals} kcal today across ${meals.length} item${meals.length !== 1 ? 's' : ''}. ${isOver ? `That's ${overBy} kcal over your ${goal} kcal goal — balance it with a lighter snack or an extra workout session.` : `You're ${Math.round(pct)}% through your daily goal with ${remaining} kcal left.`}`,
+    consumed:   `Consumed today: ${totalCals} kcal (${Math.round(pct)}% of your ${goal} kcal goal). ${isOver ? `You've gone over by ${overBy} kcal.` : `${remaining} kcal budget remaining.`} Logging consistently helps keep you accountable.`,
+    burned:     `Calorie burn data isn't tracked here directly, but as a general guide: a 70 kg person burns ~300–400 kcal/hr walking briskly, ~500–600 kcal/hr cycling, and ~700–900 kcal/hr running. Factor your activity into your ${goal} kcal daily goal.`,
+    budget:     `Your calorie budget is ${goal} kcal/day. So far you've used ${totalCals} kcal (${Math.round(pct)}%). ${isOver ? `You're ${overBy} kcal over — try a walk or a light dinner to compensate.` : `You have ${remaining} kcal left to work with today.`}`,
+
+    // ── Goal & Target ─────────────────────────────────────────────────────────
+    goal:       `Your daily calorie goal is set at ${goal} kcal. You've hit ${Math.round(pct)}% of that today with ${totalCals} kcal. ${isOver ? `You've exceeded the target — no need to stress, just eat lighter tomorrow.` : `You're doing well — ${remaining} kcal remaining.`}`,
+    target:     `Daily target: ${goal} kcal. Current intake: ${totalCals} kcal. ${isOver ? `Over by ${overBy} kcal — consider skipping a heavy snack tonight.` : `You're on track with ${remaining} kcal left in your budget.`}`,
+    limit:      `Your daily calorie limit is ${goal} kcal. You've logged ${totalCals} kcal so far. ${isOver ? `You're ${overBy} kcal above the limit. One over day won't derail your goals, but try to be more mindful tomorrow.` : `Still within your limit — ${remaining} kcal to spare.`}`,
+    progress:   `Daily progress: ${totalCals} kcal / ${goal} kcal (${Math.round(pct)}%). ${meals.length > 0 ? `You've logged ${meals.length} meal${meals.length !== 1 ? 's' : ''} today with an average of ${mealAvg} kcal per meal.` : 'Start logging meals to track your progress.'} ${isOver ? 'Consider a lighter dinner.' : 'You\'re on target!'}`,
+    remaining:  `You have ${remaining > 0 ? remaining + ' kcal remaining' : 'exceeded your goal by ' + overBy + ' kcal'} today. ${remaining > 0 ? `That's roughly ${remaining < 300 ? 'a small snack' : remaining < 600 ? 'one light meal' : 'one or two meals'} worth of food left.` : 'Try to balance it tomorrow with lighter meals.'}`,
+    left:       `${remaining > 0 ? `${remaining} kcal left in your budget for today. That's approximately ${remaining < 200 ? 'a piece of fruit or small snack' : remaining < 500 ? 'a balanced snack or small meal' : 'a full meal'}.` : `You're ${overBy} kcal over your daily goal. No need to stress — consistency over days matters more than one over.`}`,
+    over:       `${isOver ? `You're ${overBy} kcal over your ${goal} kcal goal today. This happens! You can offset it with a 30-minute walk (~200 kcal) or simply eat a bit lighter tomorrow.` : `You haven't exceeded your goal yet — you're at ${totalCals} kcal with ${remaining} kcal still remaining.`}`,
+
+    // ── Meals & Logging ───────────────────────────────────────────────────────
+    meal:       `You've logged ${meals.length} meal${meals.length !== 1 ? 's' : ''} today totaling ${totalCals} kcal. ${lastMeal ? `Your most recent entry is ${lastMeal.foodName} (${lastMeal.calories} kcal) at ${lastMeal.time}.` : 'Add your first meal by tapping "+ Add Meal" above!'}`,
+    meals:      `Today's meal log: ${meals.length} item${meals.length !== 1 ? 's' : ''} recorded, totaling ${totalCals} kcal. ${mealAvg > 0 ? `Average per meal: ${mealAvg} kcal.` : ''} Tap "+ Add Meal" to keep your log up to date.`,
+    food:       `You've logged ${meals.length} food item${meals.length !== 1 ? 's' : ''} today for a total of ${totalCals} kcal. ${isOver ? `You're over your ${goal} kcal goal — try a light next meal.` : `${remaining} kcal left in today's budget. Keep logging to stay accurate.`}`,
+    breakfast:  `Breakfast is your most important meal — it kickstarts metabolism and helps regulate appetite throughout the day. A healthy breakfast is typically 300–500 kcal. ${meals.some(m => m.category === 'Breakfast') ? `You've already logged breakfast today.` : `You haven't logged breakfast yet — tap "+ Add Meal" to record it.`}`,
+    lunch:      `Lunch typically accounts for 25–35% of your daily calories (~550–770 kcal on a ${goal} kcal goal). ${meals.some(m => m.category === 'Lunch') ? `Lunch is already logged today.` : `You haven't logged lunch yet — add it when ready!`}`,
+    dinner:     `Dinner ideally makes up 30–35% of your daily calories. ${isOver ? `Since you're already over your goal, try to keep dinner light — salads, soups, or lean proteins work great.` : `You have ${remaining} kcal left, which gives you comfortable room for a balanced dinner.`}`,
+    snack:      `Healthy snacks of 100–200 kcal can prevent overeating at meals. ${meals.some(m => m.category === 'Snack') ? `You've logged a snack today.` : `No snack logged yet.`} Good options: Greek yogurt (~130 kcal), a banana (~90 kcal), or a handful of almonds (~160 kcal).`,
+    log:        `To log a meal, tap the "+ Add Meal" button at the top. Select a meal type, enter the food name, calories, and an optional note. Your total and progress bar update instantly after saving.`,
+    add:        `Adding meals is easy — press "+ Add Meal", choose Breakfast / Lunch / Dinner / Snack / Pre-Workout / Post-Workout, fill in the food name and calorie count, then hit "Save Meal". Your dashboard updates right away.`,
+    record:     `Consistent logging is the #1 habit behind successful calorie management. Studies show people who track their food eat 10–20% less without feeling restricted. Tap "+ Add Meal" to add your current meal.`,
+    track:      `Tracking calories accurately requires logging everything — including drinks, sauces, and cooking oils, which are easy to forget. Even rough estimates beat not logging. You've tracked ${meals.length} item${meals.length !== 1 ? 's' : ''} so far today.`,
+    last:       `${lastMeal ? `Your last logged meal is ${lastMeal.foodName} (${lastMeal.calories} kcal, ${lastMeal.category}) at ${lastMeal.time}.` : `You haven't logged any meals yet today. Tap "+ Add Meal" to get started!`}`,
+    recent:     `${lastMeal ? `Most recent entry: ${lastMeal.foodName} · ${lastMeal.calories} kcal · ${lastMeal.category} · ${lastMeal.time}.` : `No meals logged yet today.`} Your running total is ${totalCals} kcal.`,
+    streak:     `You're on a 6-day logging streak — amazing! Consistency in logging is strongly correlated with reaching calorie goals. Keep the streak alive by logging at least one meal every day.`,
+
+    // ── Macros & Nutrition ────────────────────────────────────────────────────
+    protein:    `Protein is essential for muscle repair, satiety, and metabolism. For a ${goal} kcal diet, aim for 120–150g of protein/day (25–30% of calories). High-protein foods: chicken breast (~165 kcal/100g, 31g protein), eggs (~70 kcal each, 6g protein), Greek yogurt (~130 kcal, 17g protein).`,
+    carbs:      `Carbohydrates are your body's primary energy source. On a ${goal} kcal diet, 45–55% from carbs means roughly 248–303g/day. Focus on complex carbs — oats, brown rice, sweet potato — for sustained energy rather than spikes.`,
+    carbohydrates: `Carbs supply quick energy and support brain function. Aim for 45–55% of your calories (${Math.round(goal * 0.5 / 4)}g/day approx). Prioritize whole grains, legumes, and vegetables over refined sugars and white bread.`,
+    fat:        `Dietary fat is crucial for hormones, brain health, and fat-soluble vitamin absorption. Aim for 20–35% of your daily calories (~49–85g/day on a ${goal} kcal goal). Prioritize healthy fats — avocado, nuts, olive oil, fatty fish.`,
+    fibre:      `Fibre aids digestion, controls blood sugar, and keeps you full longer — critical for calorie management. Aim for 25–38g/day. Top sources: lentils, black beans, broccoli, oats, chia seeds, and apples with skin.`,
+    fiber:      `Dietary fibre (target 25–38g/day) helps you feel full on fewer calories — a major advantage for staying within your ${goal} kcal goal. It also feeds beneficial gut bacteria and slows sugar absorption.`,
+    sugar:      `Added sugar adds calories with minimal nutritional value. The WHO recommends under 50g/day (ideally under 25g). Watch hidden sugars in sauces, drinks, flavoured yogurts, and packaged snacks — they add up fast.`,
+    sodium:     `Sodium doesn't add calories but affects water retention and blood pressure. Aim for under 2,300 mg/day. High-sodium foods: processed meats, canned soups, fast food, and soy sauce. Drinking more water helps flush excess sodium.`,
+    macro:      `Your key macronutrient targets on a ${goal} kcal diet: Protein ~30% (150g) · Carbs ~45% (248g) · Fat ~25% (61g). Tracking macros alongside calories gives you a clearer picture of food quality, not just quantity.`,
+    macros:     `Macro split for a ${goal} kcal goal: ~150g protein (600 kcal) · ~248g carbohydrates (990g kcal) · ~68g fat (610 kcal). These are estimates — your ideal ratios depend on your activity level and fitness goals.`,
+    nutrition:  `Good nutrition goes beyond calories. Ensure you're getting: sufficient protein for muscle and satiety, complex carbs for energy, healthy fats for hormones, and plenty of fibre and micronutrients from vegetables and whole foods.`,
+
+    // ── Weight & Body Composition ─────────────────────────────────────────────
+    weight:     `To lose ~0.5 kg/week, you need a ~500 kcal daily deficit. To gain muscle, aim for a 200–300 kcal surplus. Your current goal of ${goal} kcal/day is your maintenance or target level — consistency over weeks is what drives results.`,
+    lose:       `Safe weight loss is 0.25–1 kg/week — achieved by a 250–1000 kcal daily deficit. At your ${goal} kcal goal, if your maintenance is ~2400 kcal, you're already in a gentle deficit. Pair this with strength training to preserve muscle mass.`,
+    gain:       `To gain muscle or weight, eat in a 200–500 kcal surplus above your maintenance. Prioritise protein (1.6–2.2g/kg bodyweight) and resistance training. A slow bulk of 0.25–0.5 kg/week minimises fat gain.`,
+    maintain:   `Weight maintenance happens when calories in ≈ calories out. Your ${goal} kcal goal is designed for this balance. Daily fluctuations are normal — focus on weekly averages rather than stressing about single days.`,
+    deficit:    `A calorie deficit means eating fewer calories than you burn. A 500 kcal/day deficit produces ~0.5 kg/week of fat loss. ${isOver ? `Today you're in a surplus of ${overBy} kcal, so no deficit today.` : `You've eaten ${totalCals} kcal — if your maintenance is above this, you're in a deficit today.`}`,
+    surplus:    `A calorie surplus means eating more than you burn. ${isOver ? `Today you're ${overBy} kcal above your ${goal} kcal goal.` : `You're not in surplus yet — ${remaining} kcal remaining in your budget.`} Small surpluses support muscle building; large surpluses lead to fat gain.`,
+    metabolism: `Metabolism determines how many calories you burn at rest (BMR). Average BMR is ~1400–1800 kcal/day. Total daily burn (TDEE) adds activity: lightly active people burn ~1.3–1.5x BMR. Your ${goal} kcal goal likely reflects your estimated TDEE.`,
+    bmi:        `BMI (Body Mass Index) is calculated from height and weight, not calories. It's a rough health indicator. More useful for nutrition goals: focus on body composition — muscle vs. fat ratio — which consistent calorie logging and resistance training help optimize.`,
+
+    // ── Weekly Trends & Stats ─────────────────────────────────────────────────
+    week:       `Your 7-day calorie data: Mon 1,980 · Tue 2,150 · Wed 2,320 · Thu 1,890 · Fri 2,100 · Sat 2,450 · Today ${totalCals}. Weekly average: ~${Math.round((1980+2150+2320+1890+2100+2450+totalCals)/7)} kcal/day vs your ${goal} kcal goal.`,
+    weekly:     `Weekly intake summary: your average this week is ~${Math.round((1980+2150+2320+1890+2100+2450+totalCals)/7)} kcal/day. Your best day was Saturday (2,450 kcal) and your lowest was Thursday (1,890 kcal). Consistency across the week matters more than any single day.`,
+    trend:      `Your calorie trend this week shows moderate variation — a low of 1,890 kcal and a high of 2,450 kcal. Aim to keep all days within ±200 kcal of your ${goal} kcal goal for the most stable energy and body composition results.`,
+    average:    `Your 7-day calorie average is ~${Math.round((1980+2150+2320+1890+2100+2450+totalCals)/7)} kcal/day. Your daily goal is ${goal} kcal. The weekly average is a much stronger predictor of long-term results than any single day's intake.`,
+    history:    `Your recent calorie history: Mon 1,980 · Tue 2,150 · Wed 2,320 · Thu 1,890 · Fri 2,100 · Sat 2,450 · Today ${totalCals}. Today's total will update as you log more meals.`,
+    chart:      `The 7-day bar chart shows your calorie intake per day. Today's bar (highlighted in orange) currently shows ${totalCals} kcal. The chart updates in real time as you log more meals today.`,
+    stats:      `Your calorie stats: Today ${totalCals} kcal · Goal ${goal} kcal · ${Math.round(pct)}% complete · ${meals.length} meals logged · ${mealAvg > 0 ? `${mealAvg} kcal/meal avg` : 'No meals yet'} · 6-day streak · 7-day avg ~${Math.round((1980+2150+2320+1890+2100+2450+totalCals)/7)} kcal.`,
+    data:       `Nutrition data for today: ${totalCals} kcal consumed · ${goal} kcal goal · ${Math.round(pct)}% progress · ${meals.length} items logged · ${remaining > 0 ? remaining + ' kcal remaining' : overBy + ' kcal over goal'}.`,
+
+    // ── Meal Types & Timing ───────────────────────────────────────────────────
+    preworkout: `Pre-workout meals should be eaten 1–3 hrs before training. Aim for 200–400 kcal with a balance of carbs and protein: banana + peanut butter (~280 kcal), oats + milk (~300 kcal), or a protein smoothie (~350 kcal). This fuels performance without causing discomfort.`,
+    postworkout:`Post-workout nutrition is critical for recovery. Within 30–60 mins of training, aim for 300–500 kcal with high protein (25–40g) and moderate carbs to replenish glycogen. Options: protein shake + banana (~350 kcal), chicken + rice (~450 kcal), or Greek yogurt + berries (~250 kcal).`,
+    timing:     `Meal timing affects energy and appetite. A common approach: Breakfast 7–9 AM · Snack 10:30 AM · Lunch 12–1 PM · Snack 3:30 PM · Dinner 6–8 PM. Eating every 3–4 hrs prevents excessive hunger that leads to overeating.`,
+    fasting:    `Intermittent fasting (IF) compresses your eating window — commonly 16:8 (eat within 8 hrs, fast 16 hrs). It doesn't require eating less, just eating within a window. Some people find it easier to hit calorie goals within a defined window. Still log all meals for accuracy.`,
+    eating:     `Mindful eating — eating slowly, without distractions, and stopping at 80% full — naturally reduces calorie intake by 10–20% without counting. Pair it with logging for the most powerful results. You've eaten ${totalCals} kcal today.`,
+
+    // ── Tips & Advice ─────────────────────────────────────────────────────────
+    tips:       `Top calorie management tips: ① Log every meal — even snacks. ② Fill half your plate with vegetables (low-cal, high-fibre). ③ Drink water before meals to reduce hunger. ④ Avoid liquid calories (juice, soda, alcohol). ⑤ Meal prep to avoid impulse eating.`,
+    advice:     `Based on your data: you're at ${totalCals} kcal today. ${isOver ? `You've exceeded your goal — consider a light, protein-rich dinner tonight and prioritise vegetables.` : `You're doing well. Focus on protein and vegetables for your remaining ${remaining} kcal to stay satisfied.`}`,
+    help:       `I can help you with: calorie totals, daily & weekly trends, macro guidance, meal timing, weight goals, food tips, and logging meals. Try asking about your progress, macros, a specific meal type, or what to eat next!`,
+    hungry:     `Feeling hungry with ${remaining > 0 ? remaining + ' kcal remaining' : 'your goal reached'}? ${remaining > 300 ? `You have room for a satisfying meal — choose high-protein and high-fibre options to stay full longer.` : `Try high-volume, low-calorie foods: cucumber, celery, leafy greens, or a broth-based soup. Drinking a large glass of water first can also reduce perceived hunger.`}`,
+    full:       `Feeling full is a great sign of portion control! Your satiety hormones (leptin and ghrelin) work best when meals are eaten slowly and you stop before feeling stuffed. You've consumed ${totalCals} kcal today — ${isOver ? 'slightly over goal.' : 'still within your budget.'}`,
+    water:      `Hydration is often confused with hunger — if you feel hungry soon after eating, try drinking 250–500 ml of water first. Aim for 2–3 litres/day. Water has zero calories and helps your body metabolize fat more efficiently.`,
+    improve:    `To improve your nutrition: ① Increase protein to 1.6–2g/kg body weight. ② Replace refined carbs with whole grains. ③ Eat more vegetables (aim for 5+ servings/day). ④ Log everything — even condiments and drinks. ⑤ Meal prep 2–3 days ahead to avoid poor choices.`,
+    cheat:      `One higher-calorie day won't derail your progress — it takes a 3,500 kcal surplus to gain 0.5 kg of fat. What matters is the weekly average. After a higher day, simply return to your ${goal} kcal target the next day without over-restricting.`,
   };
 
   /* ── Chart Data ─────────────────────────────────────────────── */
@@ -373,8 +460,8 @@ export function CaloriesPage() {
                 title="Nutrition AI"
                 moduleKey="calories"
                 responses={chatResponses}
-                defaultResponse="Your nutrition today looks on track. Keep logging your meals for accurate insights."
-                autoMessages={[{ text: `You've consumed ${totalCals} kcal so far. Keep logging your meals for accurate insights.`, delay: 1500 }]}
+                defaultResponse="I can help with your calorie totals, meal log, macros, weekly trends, weight goals, and nutrition tips. Try asking about your progress, remaining calories, a specific meal type, or what to eat next!"
+                autoMessages={[{ text: `You've consumed ${totalCals} kcal of your ${goal} kcal goal today (${Math.round(pct)}%). ${remaining > 0 ? `${remaining} kcal remaining.` : `${overBy} kcal over goal.`} Ask me anything about your nutrition!`, delay: 1500 }]}
               />
             </div>
           </div>

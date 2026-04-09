@@ -7,7 +7,7 @@ import { useResponsive } from '../hooks/useResponsive';
 import { Clock, TrendingUp, Star, Moon } from 'lucide-react';
 import { toast } from 'sonner';
 import { databases, DATABASE_ID, COLLECTIONS, ID, account } from '../../lib/appwrite';
-import '../styles/dashboard.css';
+
 
 const bedImg    = '/assets/bed.png';
 const moonImg   = '/assets/moon.png';
@@ -78,11 +78,85 @@ export function SleepPage() {
     }
   };
 
-  const chatResponses = {
-    sleep:   `Your average is ${avgHours} hours.`,
-    quality: 'Sleep quality score is 78/100 — above average. Keep your bedtime consistent.',
-    deep:    'You spent 1.8 hours in deep sleep last night — within the healthy 20–25% range.',
-    rem:     'REM sleep was 19% last night, supporting memory and mood.',
+  const chatResponses: Record<string, string> = {
+    // ── Duration / Hours ──────────────────────────────────────────────────────
+    sleep:        `Your nightly average is ${avgHours || 7.2} hours. Adults need 7–9 hours for optimal health. You're ${(avgHours || 7.2) >= 7 ? 'hitting the healthy range — great job!' : 'slightly below the recommended minimum. Try getting to bed 30 minutes earlier tonight.'}`,
+    hours:        `You're averaging ${avgHours || 7.2} hrs per night. The sweet spot for most adults is 7–9 hours. Consistently sleeping less than 7 hrs increases fatigue, mood issues, and long-term health risks.`,
+    duration:     `Your average sleep duration this week is ${avgHours || 7.2} hours. Aim for at least 7 hrs on weeknights and avoid "sleeping in" more than 1 extra hour on weekends to protect your circadian rhythm.`,
+    average:      `Your weekly average is ${avgHours || 7.2} hrs/night. A healthy adult average is 7.5–8 hrs. You're ${(avgHours || 7.2) >= 7.5 ? 'right on target!' : 'close — small adjustments to your bedtime routine can get you there.'}`,
+    tonight:      `Tonight's target is 8 hours. If you go to bed at 10:30 PM, aim to wake at 6:30 AM. Avoid screens 30 mins before bed and keep your room cool (65–68°F / 18–20°C) for the best rest.`,
+    time:         `Your average bedtime is 10:45 PM with a wake time around 6:30 AM — that's a solid 7.75 hrs window. Consistency matters more than perfection; try to keep your schedule within ±30 minutes daily.`,
+
+    // ── Quality ───────────────────────────────────────────────────────────────
+    quality:      'Your sleep quality score is 78/100 — above average. Quality is influenced by sleep continuity, time in deep sleep, and how rested you feel on waking. Keep your bedtime consistent to push that score above 80.',
+    score:        'Your current quality score is 78/100. Scores above 85 indicate excellent sleep. To improve: reduce alcohol before bed, keep a cool dark room, and finish exercise at least 3 hrs before sleep.',
+    rating:       'You rated last night 7/10 for restfulness. Tracking your subjective rating alongside objective data helps spot patterns — like lower scores after late dinners or high-stress days.',
+    good:         'Your sleep has been good this week! Quality score is 78/100 and you hit 7+ hours on 5 of 7 nights. Keep your wind-down routine consistent to maintain this.',
+    bad:          'Sorry to hear you had a rough night. Common culprits: stress, late caffeine, blue light exposure, or an inconsistent schedule. Try a 10-minute wind-down routine tonight — dim lights, no phone, slow breathing.',
+    poor:         'Poor sleep can snowball quickly. Prioritize tonight: no caffeine after 2 PM, dim your lights an hour before bed, and keep your room between 65–68°F. Even one solid night helps reset your body clock.',
+
+    // ── Sleep Stages ──────────────────────────────────────────────────────────
+    deep:         'You spent 1.8 hours in deep sleep last night — sitting comfortably within the healthy 20–25% range. Deep sleep (slow-wave) is critical for physical recovery, immune function, and memory consolidation.',
+    light:        'Light sleep made up about 45% of your night. This stage bridges deep sleep and REM cycles. It\'s normal and necessary, though too much light sleep at the expense of deep sleep can leave you feeling unrested.',
+    rem:          'Your REM sleep was 19% last night (~1.4 hrs), which supports memory consolidation, emotional processing, and creativity. Healthy adults aim for 20–25% REM. Alcohol and late-night eating are the most common REM disruptors.',
+    stage:        'Your sleep stages last night: Deep 25% · Light 45% · REM 19% · Awake 5%. This is a healthy distribution. Deep and REM sleep are the most restorative — protect them by keeping a consistent schedule.',
+    stages:       'Sleep cycles through Light → Deep → REM roughly every 90 minutes. You complete 4–5 cycles per night. Your breakdown last night (Deep 25%, Light 45%, REM 19%) is well within normal ranges.',
+    cycle:        'A full sleep cycle lasts ~90 minutes. You likely completed 4–5 cycles last night. Waking up at the end of a cycle (rather than mid-cycle) reduces grogginess — apps like sleep calculators can help you time your alarm.',
+    cycles:       'You completed approximately 5 sleep cycles last night based on your 7.5 hrs. Each cycle ends with a brief REM phase that gets longer as the night goes on — which is why cutting sleep short hits REM the hardest.',
+
+    // ── Bedtime & Wake Time ───────────────────────────────────────────────────
+    bedtime:      'Your average bedtime is 10:45 PM. Consistency is the #1 predictor of sleep quality — your body\'s melatonin release is calibrated to your regular sleep window. Aim to be in bed within ±30 minutes of this time every night.',
+    schedule:     'Your sleep schedule this week: bedtime ~10:45 PM, wake ~6:30 AM. You had a slight variance on Friday (11:30 PM) and Saturday (midnight). Try to cap weekend drift at 1 hour to avoid "social jet lag" on Monday.',
+    wake:         'Your average wake time is 6:30 AM. Waking at the same time every day — even on weekends — is the single most powerful way to anchor your circadian rhythm and improve long-term sleep quality.',
+    wakeup:       'Your wake-up time is consistent at around 6:30 AM on weekdays. A steady wake time trains your internal clock and reduces morning grogginess. Even if you go to bed late, try to keep this anchor time.',
+    morning:      'Good morning! Your logged wake time was 6:30 AM. Morning sunlight exposure within 30 minutes of waking helps set your circadian clock — even a few minutes outside makes a difference.',
+    night:        "Tonight's sleep window target bed by 10:30 PM and wake at 6:30 AM for a full 8-hour rest. Wind down with dim lights and avoid screens starting at 9:30 PM for the best sleep onset.",
+
+    // ── Streak & Consistency ──────────────────────────────────────────────────
+    streak:       'You\'re on a 6-night sleep streak of 7+ hours — fantastic! Streaks build momentum and reflect improved sleep hygiene. One poor night won\'t erase your progress, so keep going.',
+    consistency:  'Your bedtime consistency score is strong — you\'ve logged sleep within a 45-minute window for 5 of 7 nights. Consistency matters more than any single night\'s duration for long-term energy and health.',
+    habit:        'Good sleep habits pay dividends: your current streak and consistent bedtime window are the two biggest factors driving your 78/100 quality score. Keep your pre-sleep routine predictable.',
+    routine:      'A consistent wind-down routine signals your brain that sleep is coming. Try: dim lights at 9 PM, no screens at 9:30 PM, light reading or stretching, and bed at 10:30 PM. Repeating this daily builds a strong sleep trigger.',
+    improve:      'To improve your sleep: (1) Keep your wake time fixed 7 days a week. (2) Cut caffeine by 2 PM. (3) Make your room dark and cool. (4) Avoid alcohol within 3 hrs of bed. Even one change can bump your quality score noticeably.',
+    goal:         `Your sleep goal is 8 hrs/night. You're currently averaging ${avgHours || 7.2} hrs — ${Math.abs(8 - (avgHours || 7.2)).toFixed(1)} hrs ${(avgHours || 7.2) >= 8 ? 'above' : 'below'} target. Small adjustments to your bedtime can close that gap within a week.`,
+
+    // ── Tips & Advice ─────────────────────────────────────────────────────────
+    tips:         'Top sleep tips for you: ① Go to bed and wake at the same time daily. ② Keep your room cool (65–68°F). ③ No caffeine after 2 PM. ④ Dim lights 1 hr before bed. ⑤ Avoid alcohol within 3 hrs of sleep — it disrupts REM heavily.',
+    advice:       'Based on your data: your consistency is good but bedtime drifts on weekends. Protect your Friday/Saturday schedule — even one late night can push your Monday fatigue noticeably. Also consider a 5-min breathing exercise before bed.',
+    help:         'I can help you with: sleep duration & averages, quality scores, deep sleep and REM data, bedtime consistency, sleep streaks, tips to sleep better, and what your weekly trends mean. Just ask!',
+    insomnia:     'If you\'re struggling to fall asleep: try stimulus control (bed is only for sleep), keep a consistent wake time even after a bad night, avoid lying awake in bed for more than 20 minutes, and limit daytime naps to 20 min before 3 PM.',
+    nap:          'Naps can help if you\'re sleep-deprived, but keep them to 20–30 minutes before 3 PM. Longer or later naps can reduce sleep pressure and make it harder to fall asleep at night — potentially hurting your streak.',
+    caffeine:     'Caffeine has a half-life of ~5–6 hrs. A coffee at 3 PM can still be 50% active at 9 PM, making it harder to fall asleep and reducing your deep sleep. Try cutting off caffeine by 1–2 PM for noticeably better rest.',
+    alcohol:      'Alcohol may help you fall asleep faster, but it suppresses REM sleep and increases wake-ups in the second half of the night. Even 1–2 drinks can reduce REM by 20–25%. Try a no-alcohol evening and compare your quality score.',
+    screen:       'Blue light from screens suppresses melatonin for up to 2 hours after exposure. Try enabling night mode on your devices after 8 PM and putting your phone down 30 mins before bed. Your REM sleep will thank you.',
+    stress:       'Stress is one of the top sleep disruptors. High cortisol keeps your brain alert at bedtime. Try a 5-minute body scan or box breathing (4s inhale, 4s hold, 4s exhale, 4s hold) before bed to lower your nervous system activity.',
+    exercise:     'Regular exercise improves deep sleep significantly, but timing matters. Exercise within 3 hrs of bedtime can raise core body temperature and delay sleep onset. Morning or afternoon workouts tend to benefit sleep the most.',
+    melatonin:    'Melatonin is most effective for shifting your sleep schedule (like jet lag), not as a general sleep aid. A low dose (0.5–1 mg) taken 1–2 hrs before your target bedtime is more effective than higher doses. Darkness triggers natural melatonin production.',
+
+    // ── Trends & Charts ───────────────────────────────────────────────────────
+    trend:        'Your 7-day sleep trend shows a dip on Tuesday (6.5 hrs) and a peak on Saturday (8.5 hrs). The weekday dip is common but worth addressing — even 30 extra minutes on weeknights makes a measurable difference by Friday.',
+    week:         `This week you averaged ${avgHours || 7.2} hrs/night. Your best night was Saturday at 8.5 hrs and your lowest was Tuesday at 6.5 hrs. Overall a solid week — keep that Saturday momentum going on Sundays too.`,
+    weekly:       `Weekly summary: ${avgHours || 7.2} hrs avg · Quality 78/100 · Deep sleep 1.8 hrs · 6-night streak. Your consistency is strong. Focus area: close the weekday gap between Tuesday lows and weekend highs.`,
+    chart:        'Your sleep duration chart shows a healthy pattern with 7+ hours on most nights. The slight dip mid-week is normal for many people. Your bedtime tracker shows good consistency — within ~45 minutes across the week.',
+    data:         `Here\'s a snapshot of your sleep data: Avg duration ${avgHours || 7.2} hrs · Quality 78/100 · Bedtime ~10:45 PM · Deep sleep 1.8 hrs (25%) · REM 19% · Streak 6 nights. Everything is in a healthy range!`,
+    stats:        `Your sleep stats: ${avgHours || 7.2} hrs average · 78/100 quality · 10:45 PM average bedtime · 6:30 AM wake time · 1.8 hrs deep sleep · 6-night streak. You\'re performing above average on all key metrics.`,
+    progress:     `Your sleep has improved this week compared to last. Duration is up, quality score held at 78, and your streak is at 6 nights. Keep logging daily — the more data, the more accurately we can spot patterns and give personalized insights.`,
+
+    // ── Logging ───────────────────────────────────────────────────────────────
+    log:          'To log your sleep, tap the "Log Sleep" button at the top right. You can record hours slept, bedtime, wake time, and a quality rating from 1–10. Logging daily builds the data needed for accurate trend analysis.',
+    record:       'You can record tonight\'s sleep by pressing "Log Sleep" above. Fill in your hours, bedtime, wake time, and rate how rested you feel. Consistent logging unlocks weekly and monthly trend insights.',
+    track:        'Sleep tracking works best when logged every day — even after a bad night. Your streaks, averages, and quality scores are all calculated from your logged entries. Tap "Log Sleep" to add tonight\'s session.',
+    save:         'To save a sleep entry, click "Log Sleep", fill in your bedtime, wake time, hours slept, and quality rating, then hit "Save Sleep Log". Your data updates instantly across all your charts and metrics.',
+
+    // ── Health & Science ──────────────────────────────────────────────────────
+    health:       'Sleep is the foundation of physical and mental health. Chronic poor sleep is linked to increased risk of heart disease, diabetes, obesity, depression, and weakened immunity. Your current 7+ hr average is a strong protective factor.',
+    brain:        'During sleep, your brain consolidates memories (REM), clears metabolic waste via the glymphatic system (deep sleep), and processes emotions. Your 1.8 hrs of deep sleep last night gave your brain a thorough "clean sweep."',
+    memory:       'REM sleep (19% last night) is directly tied to memory consolidation and learning. If you\'re studying or working on complex tasks, protecting your REM by avoiding late alcohol and maintaining sleep duration pays off cognitively.',
+    recovery:     'Deep sleep (25% last night) drives physical recovery — growth hormone is released primarily during this stage, repairing muscle, strengthening the immune system, and regulating metabolism. Your 1.8 hrs is a healthy amount.',
+    immune:       'Sleep is one of the most powerful immune regulators. Less than 6 hours of sleep triples your risk of catching a cold. Your current 7+ hr average gives your immune system strong nightly support.',
+    mood:         'Poor or disrupted sleep directly impacts mood and emotional regulation. Your 78/100 quality score and consistent REM sleep are likely contributing to better emotional resilience. Keep protecting your sleep window.',
+    weight:       'Sleep deprivation increases ghrelin (hunger hormone) and decreases leptin (fullness hormone), making overeating more likely. Consistent 7–8 hr sleep supports healthy metabolism and appetite regulation.',
+    heart:        'Regular quality sleep keeps blood pressure in check during the night and lowers cardiovascular risk. Deep sleep in particular is associated with a significant overnight dip in heart rate and blood pressure — your 25% deep sleep is doing great work.',
   };
 
   const sleepDurationData = {
@@ -352,8 +426,8 @@ export function SleepPage() {
                 title="Sleep AI"
                 moduleKey="sleep"
                 responses={chatResponses}
-                defaultResponse="Your sleep metrics look healthy. Consistency is key to better rest."
-                autoMessages={[{ text: `Average sleep is ${avgHours || 7.2} hours. Try aiming for 8 hours tonight.`, delay: 1500 }]}
+                defaultResponse="I can help with your sleep data, trends, tips, and health insights. Try asking about your quality score, deep sleep, REM, bedtime, streak, weekly trends, or how to improve your rest!"
+                autoMessages={[{ text: `Your average sleep is ${avgHours || 7.2} hrs this week. Try asking about your quality score, deep sleep, REM, streak, or tips to sleep better tonight!`, delay: 1500 }]}
               />
             </div>
           </div>

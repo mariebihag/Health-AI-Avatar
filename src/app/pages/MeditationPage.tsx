@@ -6,7 +6,6 @@ import { Brain, Plus, X, Play, Pause, RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
 import { useResponsive } from '../hooks/useResponsive';
 import { databases, DATABASE_ID, COLLECTIONS, ID, account } from '../../lib/appwrite';
-import '../styles/dashboard.css';
 
 const meditationPink   = '/assets/meditationpink.png';
 const meditationGreen  = '/assets/meditationgreen.png';
